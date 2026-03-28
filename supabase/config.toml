@@ -1,0 +1,6 @@
+# Optional: copy to your Supabase project root when using the Supabase CLI.
+# See https://supabase.com/docs/guides/cli/config
+
+[functions.signup-with-code]
+# Anon JWT is sent by the iOS client; keep true unless you need unauthenticated calls.
+verify_jwt = true

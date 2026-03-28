@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct ryderher_cupApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
+  @StateObject private var sessionManager = SessionManager()
+
+  var body: some Scene {
+    WindowGroup {
+      AppRootView()
+        .environmentObject(sessionManager)
     }
+  }
 }
