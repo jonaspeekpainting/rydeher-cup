@@ -1,6 +1,41 @@
-import { sql } from "@vercel/postgres";
+import {
+  createPool,
+  type QueryResult,
+  type QueryResultRow,
+  type VercelPool,
+} from "@vercel/postgres";
 
-export { sql };
+type Primitive = string | number | boolean | undefined | null;
+
+let pool: VercelPool | null = null;
+
+function getPool(): VercelPool {
+  if (pool) {
+    return pool;
+  }
+
+  const connectionString =
+    process.env.POSTGRES_URL ??
+    process.env.RYDEHER_POSTGRES_URL ??
+    process.env.DATABASE_URL;
+
+  if (!connectionString) {
+    throw new Error(
+      "Missing database URL. Set POSTGRES_URL or RYDEHER_POSTGRES_URL.",
+    );
+  }
+
+  pool = createPool({ connectionString });
+  return pool;
+}
+
+/** Tagged-template SQL client; uses Neon’s RYDEHER_POSTGRES_URL or POSTGRES_URL. */
+export function sql<O extends QueryResultRow>(
+  strings: TemplateStringsArray,
+  ...values: Primitive[]
+): Promise<QueryResult<O>> {
+  return getPool().sql<O>(strings, ...values);
+}
 
 export type InviteRow = {
   id: string;
