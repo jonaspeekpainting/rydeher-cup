@@ -7,9 +7,7 @@ struct AppRootView: View {
   var body: some View {
     Group {
       if sessionManager.isLoading {
-        ProgressView("Loading…")
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .background(Color(.systemGroupedBackground))
+        SplashView()
       } else if sessionManager.session == nil {
         AuthFlowView()
       } else if sessionManager.biometricLocked {

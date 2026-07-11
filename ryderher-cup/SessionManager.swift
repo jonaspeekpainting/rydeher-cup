@@ -1,82 +1,61 @@
 import Combine
 import Foundation
-import Supabase
+
+struct AuthSession: Equatable {
+  let userId: UUID
+}
 
 @MainActor
 final class SessionManager: ObservableObject {
-  @Published private(set) var session: Session?
+  @Published private(set) var session: AuthSession?
   @Published private(set) var profile: UserProfile?
   @Published private(set) var isLoading = true
   @Published var authError: String?
   @Published var biometricLocked = false
 
-  let client: SupabaseClient
-
-  private var authListenerTask: Task<Void, Never>?
+  private var token: String?
   private var suppressBiometricLockOnce = false
 
   init() {
-    client = SupabaseClient(
-      supabaseURL: AppSecrets.supabaseURL,
-      supabaseKey: AppSecrets.supabaseAnonKey
-    )
-    authListenerTask = Task { [weak self] in
-      await self?.listenToAuth()
+    token = KeychainTokenStore.load()
+    Task {
+      await restoreSession()
     }
   }
 
-  deinit {
-    authListenerTask?.cancel()
-  }
+  private func restoreSession() async {
+    defer { isLoading = false }
 
-  private func listenToAuth() async {
-    for await (event, session) in client.auth.authStateChanges {
-      self.session = session
-
-      switch event {
-      case .initialSession:
-        if let session {
-          await refreshProfile(userId: session.user.id)
-          if BiometricPreferences.lockEnabled {
-            biometricLocked = true
-          }
-        } else {
-          profile = nil
-          biometricLocked = false
-        }
-      case .signedIn:
-        if let session {
-          await refreshProfile(userId: session.user.id)
-          if suppressBiometricLockOnce {
-            biometricLocked = false
-            suppressBiometricLockOnce = false
-          }
-        }
-      case .signedOut:
-        profile = nil
-        biometricLocked = false
-      case .tokenRefreshed, .userUpdated:
-        if let session {
-          await refreshProfile(userId: session.user.id)
-        }
-      default:
-        break
-      }
-
-      isLoading = false
+    guard let token else {
+      clearSession()
+      return
     }
-  }
 
-  func refreshProfile(userId: UUID) async {
     do {
-      let response: PostgrestResponse<UserProfile> = try await client.from("profiles")
-        .select()
-        .eq("id", value: userId.uuidString)
-        .single()
-        .execute()
-      profile = response.value
+      let profile = try await ApiClient.shared.fetchProfile(token: token)
+      applyAuthenticatedState(token: token, profile: profile)
+
+      if BiometricPreferences.lockEnabled {
+        biometricLocked = true
+      }
     } catch {
+      clearSession()
+    }
+  }
+
+  func refreshProfile() async {
+    guard let token else {
       profile = nil
+      return
+    }
+
+    do {
+      profile = try await ApiClient.shared.fetchProfile(token: token)
+      authError = nil
+    } catch {
+      if case ApiClientError.unauthorized = error {
+        clearSession()
+      }
       authError = error.localizedDescription
     }
   }
@@ -84,62 +63,48 @@ final class SessionManager: ObservableObject {
   func signIn(email: String, password: String) async {
     authError = nil
     suppressBiometricLockOnce = true
+
     do {
-      try await client.auth.signIn(email: email, password: password)
+      let response = try await ApiClient.shared.signIn(
+        email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+        password: password
+      )
+      applyAuthenticatedState(token: response.token, profile: response.profile)
+      if suppressBiometricLockOnce {
+        biometricLocked = false
+        suppressBiometricLockOnce = false
+      }
     } catch {
       suppressBiometricLockOnce = false
       authError = error.localizedDescription
     }
-  }
-
-  struct SignupPayload: Encodable {
-    let email: String
-    let password: String
-    let code: String
-  }
-
-  struct EdgeErrorBody: Decodable {
-    let error: String
   }
 
   func signUp(email: String, password: String, tournamentCode: String) async {
     authError = nil
     suppressBiometricLockOnce = true
+
     do {
-      let payload = SignupPayload(
+      let response = try await ApiClient.shared.signUp(
         email: email.trimmingCharacters(in: .whitespacesAndNewlines),
         password: password,
         code: tournamentCode.trimmingCharacters(in: .whitespacesAndNewlines)
       )
-      try await client.functions.invoke(
-        "signup-with-code",
-        options: FunctionInvokeOptions(body: payload)
-      )
-      try await client.auth.signIn(email: payload.email, password: password)
+      applyAuthenticatedState(token: response.token, profile: response.profile)
+      if suppressBiometricLockOnce {
+        biometricLocked = false
+        suppressBiometricLockOnce = false
+      }
     } catch {
       suppressBiometricLockOnce = false
-      authError = parseSignupError(error)
+      authError = error.localizedDescription
     }
-  }
-
-  private func parseSignupError(_ error: Error) -> String {
-    if let fn = error as? FunctionsError, case .httpError(_, let data) = fn {
-      if let body = try? JSONDecoder().decode(EdgeErrorBody.self, from: data) {
-        return body.error
-      }
-      return String(data: data, encoding: .utf8) ?? fn.localizedDescription
-    }
-    return error.localizedDescription
   }
 
   func signOut() async {
     authError = nil
-    do {
-      try await client.auth.signOut()
-      biometricLocked = false
-    } catch {
-      authError = error.localizedDescription
-    }
+    clearSession()
+    biometricLocked = false
   }
 
   func unlockWithBiometrics() async {
@@ -158,10 +123,24 @@ final class SessionManager: ObservableObject {
   }
 
   func fetchAllProfiles() async throws -> [UserProfile] {
-    let response: PostgrestResponse<[UserProfile]> = try await client.from("profiles")
-      .select()
-      .order("display_name", ascending: true)
-      .execute()
-    return response.value
+    guard let token else {
+      throw ApiClientError.unauthorized
+    }
+    return try await ApiClient.shared.fetchAllProfiles(token: token)
+  }
+
+  private func applyAuthenticatedState(token: String, profile: UserProfile) {
+    self.token = token
+    KeychainTokenStore.save(token)
+    self.profile = profile
+    session = AuthSession(userId: profile.id)
+    authError = nil
+  }
+
+  private func clearSession() {
+    token = nil
+    KeychainTokenStore.delete()
+    profile = nil
+    session = nil
   }
 }

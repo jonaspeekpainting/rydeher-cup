@@ -6,10 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		E8ACE7122F78639D000B687E /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = E8ACE7112F78639D000B687E /* Supabase */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXContainerItemProxy section */
 		E8ACE6F22F78639D000B687E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -56,7 +52,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E8ACE7122F78639D000B687E /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -117,7 +112,6 @@
 			);
 			name = "ryderher-cup";
 			packageProductDependencies = (
-				E8ACE7112F78639D000B687E /* Supabase */,
 			);
 			productName = "ryderher-cup";
 			productReference = E8ACE6E12F78639B000B687E /* ryderher-cup.app */;
@@ -201,9 +195,6 @@
 			);
 			mainGroup = E8ACE6D82F78639B000B687E;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				E8ACE7102F78639D000B687E /* XCRemoteSwiftPackageReference "supabase-swift" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E8ACE6E22F78639B000B687E /* Products */;
 			projectDirPath = "";
@@ -411,7 +402,7 @@
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock RyderHer Cup with Face ID or Touch ID.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -441,7 +432,7 @@
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Unlock RyderHer Cup with Face ID or Touch ID.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -569,25 +560,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		E8ACE7102F78639D000B687E /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/supabase/supabase-swift";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.0.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		E8ACE7112F78639D000B687E /* Supabase */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = E8ACE7102F78639D000B687E /* XCRemoteSwiftPackageReference "supabase-swift" */;
-			productName = Supabase;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E8ACE6D92F78639B000B687E /* Project object */;
 }
