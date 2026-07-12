@@ -6,7 +6,7 @@ import {
   type CourseTeeRow,
 } from "@/lib/db";
 import {
-  fetchCourse,
+  fetchCourseWithTees,
   normalizeHolesForTee,
   normalizeTees,
 } from "@/lib/opengolf";
@@ -61,8 +61,11 @@ export async function POST(request: NextRequest) {
   }
 
   let remote;
+  let remoteTees;
   try {
-    remote = await fetchCourse(externalId);
+    const fetched = await fetchCourseWithTees(externalId);
+    remote = fetched.course;
+    remoteTees = fetched.tees;
   } catch (error) {
     console.error(error);
     return errorResponse("Could not fetch course from OpenGolfAPI", 502);
@@ -81,7 +84,7 @@ export async function POST(request: NextRequest) {
         name = ${remote.name},
         city = ${remote.city ?? null},
         state = ${remote.state ?? null},
-        raw_payload = ${JSON.stringify(remote)}::jsonb,
+        raw_payload = ${JSON.stringify({ ...remote, tees: remoteTees })}::jsonb,
         updated_at = now()
       WHERE id = ${courseId}
     `;
@@ -95,18 +98,19 @@ export async function POST(request: NextRequest) {
         ${remote.name},
         ${remote.city ?? null},
         ${remote.state ?? null},
-        ${JSON.stringify(remote)}::jsonb
+        ${JSON.stringify({ ...remote, tees: remoteTees })}::jsonb
       )
       RETURNING *
     `;
     courseId = inserted.rows[0]!.id;
   }
 
-  const tees = normalizeTees(remote);
+  const tees = normalizeTees(remote, remoteTees);
+  const holes = normalizeHolesForTee(remote);
   const teeRows: CourseTeeRow[] = [];
 
   if (tees.length === 0) {
-    const holes = normalizeHolesForTee(remote, {});
+    // Still import course-level holes so scoring works
     for (const hole of holes) {
       await sql`
         INSERT INTO course_holes (course_id, tee_id, hole_number, par, stroke_index, yardage)
@@ -124,19 +128,18 @@ export async function POST(request: NextRequest) {
         )
         VALUES (
           ${courseId},
-          ${tee.id != null ? String(tee.id) : null},
-          ${tee.name ?? tee.color ?? "Default"},
-          ${tee.color ?? null},
-          ${tee.rating ?? null},
-          ${tee.slope ?? null},
-          ${tee.total_yardage ?? tee.yardage ?? null}
+          ${tee.externalId},
+          ${tee.name},
+          ${tee.color},
+          ${tee.rating},
+          ${tee.slope},
+          ${tee.totalYardage}
         )
         RETURNING *
       `;
       const teeRow = teeInsert.rows[0]!;
       teeRows.push(teeRow);
 
-      const holes = normalizeHolesForTee(remote, tee);
       for (const hole of holes) {
         await sql`
           INSERT INTO course_holes (course_id, tee_id, hole_number, par, stroke_index, yardage)
@@ -161,9 +164,9 @@ export async function POST(request: NextRequest) {
             SELECT * FROM course_tees WHERE course_id = ${courseId}
           `
         ).rows;
-  const holes = await sql<CourseHoleRow>`
+  const holeRows = await sql<CourseHoleRow>`
     SELECT * FROM course_holes WHERE course_id = ${courseId} ORDER BY hole_number ASC
   `;
 
-  return json({ ...course.rows[0], tees: allTees, holes: holes.rows }, 201);
+  return json({ ...course.rows[0], tees: allTees, holes: holeRows.rows }, 201);
 }
