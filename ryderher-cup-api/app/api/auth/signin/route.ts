@@ -1,10 +1,7 @@
-import { sql, normalizeEmail, type ProfileRow, type UserRow } from "@/lib/db";
-import {
-  profileResponse,
-  signToken,
-  verifyPassword,
-} from "@/lib/auth";
+import { sql, normalizeEmail, type UserRow } from "@/lib/db";
+import { profileResponse, signToken, verifyPassword } from "@/lib/auth";
 import { errorResponse, json } from "@/lib/http";
+import { loadProfile } from "@/lib/profile-query";
 
 type SigninBody = {
   email?: string;
@@ -45,14 +42,7 @@ export async function POST(request: Request) {
     return errorResponse("Invalid email or password", 401);
   }
 
-  const profileResult = await sql<ProfileRow>`
-    SELECT id, email, display_name, is_admin, created_at
-    FROM profiles
-    WHERE id = ${user.id}
-    LIMIT 1
-  `;
-
-  const profile = profileResult.rows[0];
+  const profile = await loadProfile(user.id);
   if (!profile) {
     return errorResponse("Profile not found", 500);
   }

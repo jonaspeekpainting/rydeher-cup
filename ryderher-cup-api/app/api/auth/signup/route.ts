@@ -1,16 +1,20 @@
-import { sql, normalizeEmail, type InviteRow, type ProfileRow } from "@/lib/db";
+import { sql, normalizeEmail, type InviteRow } from "@/lib/db";
 import {
   hashPassword,
   profileResponse,
   signToken,
   verifyTournamentCode,
 } from "@/lib/auth";
+import { fetchHandicapIndex } from "@/lib/ghin";
 import { errorResponse, json } from "@/lib/http";
+import { linkRosterOnSignup, loadProfile } from "@/lib/profile-query";
 
 type SignupBody = {
   email?: string;
   password?: string;
   code?: string;
+  ghin_number?: string;
+  handicap_index?: number | null;
 };
 
 export async function POST(request: Request) {
@@ -24,9 +28,14 @@ export async function POST(request: Request) {
   const emailRaw = body.email;
   const password = body.password;
   const code = body.code?.trim() ?? "";
+  const ghinNumber = body.ghin_number?.trim() ?? "";
 
   if (!emailRaw || !password || !code) {
     return errorResponse("email, password, and code are required", 400);
+  }
+
+  if (!ghinNumber) {
+    return errorResponse("ghin_number is required", 400);
   }
 
   const email = normalizeEmail(emailRaw);
@@ -41,6 +50,15 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
     return errorResponse("Tournament signup is not configured", 500);
+  }
+
+  let handicap;
+  try {
+    handicap = await fetchHandicapIndex(ghinNumber, body.handicap_index);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not resolve handicap";
+    return errorResponse(message, 400);
   }
 
   const inviteResult = await sql<InviteRow>`
@@ -86,21 +104,29 @@ export async function POST(request: Request) {
       throw new Error("Could not create user");
     }
 
-    const profileResult = await sql<ProfileRow>`
-      INSERT INTO profiles (id, email, display_name, is_admin)
-      VALUES (${userId}, ${email}, ${invite.display_name}, ${invite.is_admin})
-      RETURNING id, email, display_name, is_admin, created_at
+    await sql`
+      INSERT INTO profiles (
+        id, email, display_name, is_admin,
+        ghin_number, handicap_index, handicap_source, handicap_updated_at
+      )
+      VALUES (
+        ${userId}, ${email}, ${invite.display_name}, ${invite.is_admin},
+        ${handicap.ghinNumber}, ${handicap.handicapIndex}, ${handicap.source}, now()
+      )
     `;
-    const profile = profileResult.rows[0];
-    if (!profile) {
-      throw new Error("Could not create profile");
-    }
 
     await sql`
       UPDATE invite_list
       SET claimed_at = now(), user_id = ${userId}
       WHERE id = ${invite.id}
     `;
+
+    await linkRosterOnSignup(userId, email, invite.display_name);
+
+    const profile = await loadProfile(userId);
+    if (!profile) {
+      throw new Error("Could not create profile");
+    }
 
     const token = await signToken(profile);
     return json({ token, profile: profileResponse(profile) });

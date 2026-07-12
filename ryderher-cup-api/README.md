@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Ryde-Her Cup API
 
-## Getting Started
+Next.js API for the Ryde-Her Cup iOS app (Neon Postgres + JWT auth).
 
-First, run the development server:
+## Setup
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Set env vars (see `.env.example`):
+   - `POSTGRES_URL` / `RYDEHER_POSTGRES_URL`
+   - `JWT_SECRET` (32+ chars)
+   - `TOURNAMENT_SIGNUP_CODE`
+   - Optional: `GHIN_API_BASE_URL` + `GHIN_API_TOKEN` for official handicap lookup
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Run migrations in Neon SQL Editor, in order:
+   - `migrations/001_initial_schema.sql`
+   - `migrations/003_tournament_domain.sql`
+   - Seed invites from `migrations/002_seed_invites.example.sql`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. `npm install && npm run dev`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Scripts
 
-## Learn More
+- `npm run dev` — local API
+- `npm test` — handicap engine unit tests
+- `npm run build` — production build
 
-To learn more about Next.js, take a look at the following resources:
+## Main endpoints
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Method | Path | Notes |
+|--------|------|--------|
+| POST | `/api/auth/signup` | invite + code + GHIN (+ manual index fallback) |
+| POST | `/api/auth/signin` | |
+| GET | `/api/auth/me` | |
+| GET/PATCH | `/api/profiles`, `/api/profiles/me`, `/api/profiles/:id` | |
+| GET | `/api/teams` | Hookers / Slicers roster |
+| GET | `/api/sessions` | 6 tournament rounds |
+| GET/POST | `/api/matches` | list / create (admin) |
+| GET/PATCH | `/api/matches/:id` | detail with score visibility rules |
+| POST | `/api/matches/:id/start` | snapshot handicaps, start |
+| POST | `/api/matches/:id/complete` | admin complete |
+| PUT | `/api/matches/:id/holes/:n` | participant score entry |
+| GET | `/api/standings` | cup scoreboard |
+| GET | `/api/courses/search` | OpenGolfAPI proxy |
+| GET/POST | `/api/courses` | list / import course (admin) |

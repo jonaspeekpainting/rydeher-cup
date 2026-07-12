@@ -6,10 +6,18 @@ struct SignUpView: View {
   @State private var password = ""
   @State private var confirmPassword = ""
   @State private var tournamentCode = ""
+  @State private var ghinNumber = ""
+  @State private var handicapIndexText = ""
   @State private var isSubmitting = false
 
   private var passwordsMatch: Bool {
     password == confirmPassword && !password.isEmpty
+  }
+
+  private var handicapIndex: Double? {
+    let trimmed = handicapIndexText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    return Double(trimmed)
   }
 
   var body: some View {
@@ -31,6 +39,17 @@ struct SignUpView: View {
           .textContentType(.newPassword)
         TextField("Tournament code", text: $tournamentCode)
           .textInputAutocapitalization(.never)
+      }
+
+      Section("Handicap") {
+        TextField("GHIN number", text: $ghinNumber)
+          .keyboardType(.numberPad)
+          .textInputAutocapitalization(.never)
+        TextField("Handicap Index (if GHIN lookup unavailable)", text: $handicapIndexText)
+          .keyboardType(.decimalPad)
+        Text("Enter your GHIN. If official lookup isn’t configured yet, also enter your Handicap Index.")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
       }
 
       if !password.isEmpty, !passwordsMatch {
@@ -57,7 +76,9 @@ struct SignUpView: View {
             await sessionManager.signUp(
               email: email,
               password: password,
-              tournamentCode: tournamentCode
+              tournamentCode: tournamentCode,
+              ghinNumber: ghinNumber,
+              handicapIndex: handicapIndex
             )
           }
         } label: {
@@ -71,7 +92,8 @@ struct SignUpView: View {
         }
         .disabled(
           email.isEmpty || password.count < 8 || !passwordsMatch
-            || tournamentCode.isEmpty || isSubmitting
+            || tournamentCode.isEmpty || ghinNumber.isEmpty
+            || handicapIndex == nil || isSubmitting
         )
       }
     }

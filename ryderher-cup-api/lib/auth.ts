@@ -2,6 +2,9 @@ import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { timingSafeEqual } from "crypto";
 import type { ProfileRow } from "./db";
+import { profileResponse } from "./profile";
+
+export { profileResponse } from "./profile";
 
 const TOKEN_TTL = "30d";
 
@@ -93,11 +96,7 @@ export async function verifyToken(
   }
 }
 
-export function profileResponse(profile: ProfileRow) {
-  return {
-    id: profile.id,
-    email: profile.email,
-    display_name: profile.display_name,
-    is_admin: profile.is_admin,
-  };
+/** @deprecated use profileResponse from profile.ts — kept for call-site compatibility */
+export function toProfileResponse(profile: ProfileRow) {
+  return profileResponse(profile);
 }

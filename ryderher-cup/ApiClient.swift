@@ -33,54 +33,180 @@ final class ApiClient {
   static let shared = ApiClient()
 
   private let baseURL = AppSecrets.apiBaseURL
-  private let decoder: JSONDecoder = {
-    let decoder = JSONDecoder()
-    return decoder
-  }()
+  private let decoder = JSONDecoder()
 
   private init() {}
 
-  func signUp(email: String, password: String, code: String) async throws -> AuthResponse {
-    try await post(
-      path: "/api/auth/signup",
-      body: ["email": email, "password": password, "code": code],
-      authorized: false
-    )
+  func signUp(
+    email: String,
+    password: String,
+    code: String,
+    ghinNumber: String,
+    handicapIndex: Double?
+  ) async throws -> AuthResponse {
+    var body: [String: Any] = [
+      "email": email,
+      "password": password,
+      "code": code,
+      "ghin_number": ghinNumber,
+    ]
+    if let handicapIndex {
+      body["handicap_index"] = handicapIndex
+    }
+    return try await request(path: "/api/auth/signup", method: "POST", body: body, token: nil)
   }
 
   func signIn(email: String, password: String) async throws -> AuthResponse {
-    try await post(
+    try await request(
       path: "/api/auth/signin",
+      method: "POST",
       body: ["email": email, "password": password],
-      authorized: false
+      token: nil
     )
   }
 
   func fetchProfile(token: String) async throws -> UserProfile {
-    try await get(path: "/api/auth/me", token: token)
+    try await request(path: "/api/auth/me", method: "GET", token: token)
   }
 
   func fetchAllProfiles(token: String) async throws -> [UserProfile] {
-    try await get(path: "/api/profiles", token: token)
+    try await request(path: "/api/profiles", method: "GET", token: token)
   }
 
-  private func get<T: Decodable>(path: String, token: String) async throws -> T {
-    let request = try makeRequest(path: path, method: "GET", token: token)
-    return try await perform(request)
+  func patchMyProfile(
+    token: String,
+    ghinNumber: String?,
+    handicapIndex: Double?,
+    courseHandicap: Int?,
+    refreshGhin: Bool
+  ) async throws -> UserProfile {
+    var body: [String: Any] = ["refresh_ghin": refreshGhin]
+    if let ghinNumber { body["ghin_number"] = ghinNumber }
+    if let handicapIndex { body["handicap_index"] = handicapIndex }
+    if let courseHandicap { body["course_handicap"] = courseHandicap }
+    return try await request(path: "/api/profiles/me", method: "PATCH", body: body, token: token)
   }
 
-  private func post<T: Decodable>(
-    path: String,
-    body: [String: String],
-    authorized: Bool,
-    token: String? = nil
-  ) async throws -> T {
-    var request = try makeRequest(
-      path: path,
-      method: "POST",
-      token: authorized ? token : nil
+  func adminPatchProfile(
+    token: String,
+    profileId: UUID,
+    teamSlug: String?,
+    handicapIndex: Double?,
+    courseHandicap: Int?
+  ) async throws -> UserProfile {
+    var body: [String: Any] = [:]
+    if let teamSlug { body["team_slug"] = teamSlug }
+    if let handicapIndex { body["handicap_index"] = handicapIndex }
+    if let courseHandicap { body["course_handicap"] = courseHandicap }
+    return try await request(
+      path: "/api/profiles/\(profileId.uuidString)",
+      method: "PATCH",
+      body: body,
+      token: token
     )
-    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+  }
+
+  func fetchStandings(token: String) async throws -> CupStandings {
+    try await request(path: "/api/standings", method: "GET", token: token)
+  }
+
+  func fetchSessions(token: String) async throws -> [TournamentSession] {
+    try await request(path: "/api/sessions", method: "GET", token: token)
+  }
+
+  func fetchMatches(token: String) async throws -> [TournamentMatch] {
+    try await request(path: "/api/matches", method: "GET", token: token)
+  }
+
+  func fetchMatch(token: String, id: UUID) async throws -> TournamentMatch {
+    try await request(path: "/api/matches/\(id.uuidString)", method: "GET", token: token)
+  }
+
+  func createMatch(token: String, body: [String: Any]) async throws -> TournamentMatch {
+    try await request(path: "/api/matches", method: "POST", body: body, token: token)
+  }
+
+  func updateMatch(token: String, id: UUID, body: [String: Any]) async throws -> TournamentMatch {
+    try await request(
+      path: "/api/matches/\(id.uuidString)",
+      method: "PATCH",
+      body: body,
+      token: token
+    )
+  }
+
+  func startMatch(token: String, id: UUID) async throws -> TournamentMatch {
+    try await request(
+      path: "/api/matches/\(id.uuidString)/start",
+      method: "POST",
+      body: [:],
+      token: token
+    )
+  }
+
+  func completeMatch(token: String, id: UUID) async throws -> TournamentMatch {
+    try await request(
+      path: "/api/matches/\(id.uuidString)/complete",
+      method: "POST",
+      body: [:],
+      token: token
+    )
+  }
+
+  func putHoleScore(
+    token: String,
+    matchId: UUID,
+    hole: Int,
+    playerScores: [[String: Any]]?,
+    sideScores: [[String: Any]]?
+  ) async throws -> TournamentMatch {
+    var body: [String: Any] = [:]
+    if let playerScores { body["player_scores"] = playerScores }
+    if let sideScores { body["side_scores"] = sideScores }
+    return try await request(
+      path: "/api/matches/\(matchId.uuidString)/holes/\(hole)",
+      method: "PUT",
+      body: body,
+      token: token
+    )
+  }
+
+  func searchCourses(token: String, query: String) async throws -> [CourseSearchHit] {
+    let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+    return try await request(
+      path: "/api/courses/search?q=\(encoded)",
+      method: "GET",
+      token: token
+    )
+  }
+
+  func listCourses(token: String) async throws -> [CourseSummary] {
+    try await request(path: "/api/courses", method: "GET", token: token)
+  }
+
+  func importCourse(token: String, externalId: String) async throws -> CourseSummary {
+    try await request(
+      path: "/api/courses",
+      method: "POST",
+      body: ["external_id": externalId],
+      token: token
+    )
+  }
+
+  func fetchTeams(token: String) async throws -> [TournamentTeam] {
+    try await request(path: "/api/teams", method: "GET", token: token)
+  }
+
+  private func request<T: Decodable>(
+    path: String,
+    method: String,
+    body: [String: Any]? = nil,
+    token: String?
+  ) async throws -> T {
+    var request = try makeRequest(path: path, method: method, token: token)
+    if let body {
+      request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    }
     return try await perform(request)
   }
 
