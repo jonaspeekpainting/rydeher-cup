@@ -2,9 +2,9 @@
  * Ryde-Her Cup handicap engine.
  *
  * Rules:
- * - 80% allowance on course handicaps
  * - Best ball / singles: per-player CH × 0.80
- * - Scramble / shamble / alternate shot: 0.80 × (0.35×low + 0.15×high)
+ * - Shamble: per-player CH × 0.75
+ * - Scramble / alternate shot: 0.80 × (0.35×low + 0.15×high)
  * - Round half-up (.5 and above up)
  * - Everyone strokes off the best (lowest) playing handicap in the field
  */
@@ -57,6 +57,10 @@ export function applyEightyPercent(courseHandicap: number): number {
   return roundHalfUp(courseHandicap * 0.8);
 }
 
+export function applySeventyFivePercent(courseHandicap: number): number {
+  return roundHalfUp(courseHandicap * 0.75);
+}
+
 /**
  * Standard two-man scramble formula with 80% allowance.
  * (0.35 × lowCH + 0.15 × highCH) × 0.80, then round half-up.
@@ -72,11 +76,7 @@ export function scrambleTeamAllowance(
 }
 
 export function isTeamBallFormat(format: MatchFormat): boolean {
-  return (
-    format === "scramble" ||
-    format === "shamble" ||
-    format === "alternate_shot"
-  );
+  return format === "scramble" || format === "alternate_shot";
 }
 
 export function isMatchPlayFormat(format: MatchFormat): boolean {
@@ -111,23 +111,19 @@ export function computePlayingHandicaps(
   format: MatchFormat,
   players: PlayerHandicapInput[],
 ): PlayingHandicapSnapshot {
-  if (isTeamBallFormat(format) && format !== "shamble") {
+  if (isTeamBallFormat(format)) {
     return computeTeamBallSnapshot(format, players);
   }
 
-  if (format === "shamble") {
-    // Shamble uses scramble team allowance for the side, but scores per player.
-    // Snapshot includes both side allowance and per-player 80% for net best-ball after drive.
-    // Per plan: "same as scramble scoring/handicap" for the team formula.
-    return computeTeamBallSnapshot(format, players);
-  }
+  // Per-player formats: best_ball_match, singles_match, shamble
+  const allowanceFn =
+    format === "shamble" ? applySeventyFivePercent : applyEightyPercent;
 
-  // Per-player formats: best_ball_match, singles_match
   const withAllowance: PlayerPlayingHandicap[] = players.map((p) => ({
     profileId: p.profileId,
     side: p.side,
     courseHandicap: p.courseHandicap,
-    allowanceStrokes: applyEightyPercent(p.courseHandicap),
+    allowanceStrokes: allowanceFn(p.courseHandicap),
     relativeStrokes: 0,
   }));
 

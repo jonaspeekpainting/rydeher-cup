@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   applyEightyPercent,
+  applySeventyFivePercent,
   computeMatchPlayResult,
   computePlayingHandicaps,
   courseHandicapFromIndex,
@@ -22,6 +23,15 @@ describe("applyEightyPercent", () => {
   it("applies 80% to course handicaps", () => {
     assert.equal(applyEightyPercent(10), 8);
     assert.equal(applyEightyPercent(20), 16);
+  });
+});
+
+describe("applySeventyFivePercent", () => {
+  it("applies 75% to course handicaps", () => {
+    assert.equal(applySeventyFivePercent(10), 8);
+    assert.equal(applySeventyFivePercent(20), 15);
+    assert.equal(applySeventyFivePercent(11), 8); // 8.25 → 8
+    assert.equal(applySeventyFivePercent(13), 10); // 9.75 → 10
   });
 });
 
@@ -84,6 +94,27 @@ describe("computePlayingHandicaps scramble", () => {
     assert.equal(snap.fieldMinimum, 4);
     assert.equal(hookers.relativeStrokes, 1);
     assert.equal(slicers.relativeStrokes, 0);
+  });
+});
+
+describe("computePlayingHandicaps shamble", () => {
+  it("uses 75% of each course handicap, not the scramble team formula", () => {
+    const snap = computePlayingHandicaps("shamble", [
+      { profileId: "a", side: "hookers", courseHandicap: 10 },
+      { profileId: "b", side: "hookers", courseHandicap: 20 },
+      { profileId: "c", side: "slicers", courseHandicap: 8 },
+      { profileId: "d", side: "slicers", courseHandicap: 12 },
+    ]);
+
+    // 75%: 8, 15, 6, 9 → min 6
+    assert.equal(snap.fieldMinimum, 6);
+    const byId = Object.fromEntries(
+      snap.players.map((p) => [p.profileId, p.relativeStrokes]),
+    );
+    assert.equal(byId.a, 2);
+    assert.equal(byId.b, 9);
+    assert.equal(byId.c, 0);
+    assert.equal(byId.d, 3);
   });
 });
 
