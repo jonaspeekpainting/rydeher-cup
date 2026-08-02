@@ -1,6 +1,6 @@
 # Screenshots & media
 
-App Store Connect requires screenshots for at least one iPhone size. iPad is recommended because the project targets iPhone + iPad (`TARGETED_DEVICE_FAMILY = 1,2`).
+App Store Connect requires screenshots for at least one iPhone size. The app is **iPhone only** (`TARGETED_DEVICE_FAMILY = 1`), so iPad screenshots are not required.
 
 ## Required sizes (2026)
 
@@ -10,17 +10,32 @@ Capture from Simulator → **File → Save Screen** (or ⌘S), then upload the P
 |--------------|-------------------|------|
 | **iPhone 6.9"** (required tier) | iPhone 16 Pro Max / 15 Pro Max | **1320 × 2868** or **1290 × 2796** |
 | **iPhone 6.5"** (often still accepted) | iPhone 11 Pro Max / Xs Max | **1242 × 2688** |
-| **iPad 13"** (if you keep iPad support) | iPad Pro 13-inch | **2064 × 2752** |
 
 Portrait is fine — the app is primarily portrait.
+
+## Ready to upload
+
+Folder: [`screenshots/`](./screenshots/)
+
+Your three captures were `470×1024` (Simulator window shots). They’ve been resized to exact App Store sizes:
+
+| Screen | 6.9" (upload these first) | 6.5" (backup) |
+|--------|---------------------------|---------------|
+| Scoreboard | `scoreboard-iphone-6.9-1320x2868.png` | `scoreboard-iphone-6.5-1284x2778.png` |
+| Match Ups | `match-ups-iphone-6.9-1320x2868.png` | `match-ups-iphone-6.5-1284x2778.png` |
+| Players | `players-iphone-6.9-1320x2868.png` | `players-iphone-6.5-1284x2778.png` |
+
+In Connect, open the **iPhone 6.9"** screenshot slot and drop the three `*-6.9-*` files in order: Scoreboard → Match Ups → Players.
+
+**Sharper next time:** use Simulator **File → Save Screen** on an **iPhone 16 Pro Max** (not macOS ⌘⇧4 on the window). Upscaled shots can look a bit soft.
 
 ## Suggested shot list (3–6 screens)
 
 1. **Welcome** — logo + Create account / Sign in (brand-first)
-2. **Scoreboard** — Hookers vs Slicers cup standings hero
-3. **Match Ups** — session list or live match row
+2. **Scoreboard** — Hookers vs Slicers cup standings hero ✅
+3. **Match Ups** — session list or live match row ✅
 4. **Match detail / scorecard** — hole-by-hole
-5. **Players** — roster / teams
+5. **Players** — roster / teams ✅
 6. **Skins or winnings** (if data seeded) — optional 6th
 
 Use a **Release** or TestFlight build against production (or a seeded staging DB) so screens aren’t empty.

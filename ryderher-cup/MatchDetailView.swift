@@ -68,7 +68,11 @@ struct MatchDetailView: View {
   private func liveScoringView(_ match: TournamentMatch) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
-        LiveMatchBattleCard(match: match, showsCallToAction: false)
+        LiveMatchBattleCard(
+          match: match,
+          showsCallToAction: false,
+          pinkBallHole: hole
+        )
 
         scoringPanel(match)
       }
@@ -426,7 +430,7 @@ struct MatchDetailView: View {
         .background(Color.primary.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
       } else {
-        Text("Assigned from the hole 1–\(match.pinkBallRotationLength) rotation.")
+        Text("From the hole 1–\(match.pinkBallRotationLength) lineup — order repeats automatically.")
           .font(.caption)
           .foregroundStyle(.secondary)
         HStack {

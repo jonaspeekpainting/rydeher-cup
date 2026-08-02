@@ -62,6 +62,8 @@ struct MatchUpsTabView: View {
       } else {
         ScrollView {
           VStack(alignment: .leading, spacing: 20) {
+            BrandSectionHeader(title: "Your match ups")
+
             ForEach(liveMatches) { match in
               NavigationLink {
                 MatchDetailView(matchId: match.id)
@@ -122,14 +124,8 @@ struct MatchUpsTabView: View {
 struct LiveMatchBattleCard: View {
   let match: TournamentMatch
   var showsCallToAction: Bool = true
-
-  private var hookersNames: String {
-    names(for: "hookers")
-  }
-
-  private var slicersNames: String {
-    names(for: "slicers")
-  }
+  /// Hole used for pink-ball assignment. Defaults to the next unscored hole.
+  var pinkBallHole: Int? = nil
 
   private var holesUpText: String {
     guard let result = match.result else { return "AS" }
@@ -145,6 +141,19 @@ struct LiveMatchBattleCard: View {
     if diff > 0 { return "hookers" }
     if diff < 0 { return "slicers" }
     return nil
+  }
+
+  private var activePinkBallHole: Int {
+    pinkBallHole ?? match.currentHoleNumber
+  }
+
+  /// After the opening rotation (holes 1–N), pink ball follows that lineup order.
+  private var currentPinkBallCarrier: MatchPlayer? {
+    guard match.format?.supportsPinkBall == true else { return nil }
+    let hole = activePinkBallHole
+    guard hole > match.pinkBallRotationLength else { return nil }
+    guard let carrierId = match.assignedPinkBallCarrier(forHole: hole) else { return nil }
+    return match.players.first { $0.profileId == carrierId }
   }
 
   var body: some View {
@@ -176,10 +185,7 @@ struct LiveMatchBattleCard: View {
           Text("Hookers")
             .font(.caption.weight(.semibold))
             .foregroundStyle(.white.opacity(0.7))
-          Text(hookersNames)
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.white)
-            .fixedSize(horizontal: false, vertical: true)
+          playerNamesColumn(side: "hookers", alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -207,13 +213,32 @@ struct LiveMatchBattleCard: View {
           Text("Slicers")
             .font(.caption.weight(.semibold))
             .foregroundStyle(.white.opacity(0.7))
-          Text(slicersNames)
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.white)
-            .multilineTextAlignment(.trailing)
-            .fixedSize(horizontal: false, vertical: true)
+          playerNamesColumn(side: "slicers", alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+      }
+
+      if let carrier = currentPinkBallCarrier {
+        HStack(spacing: 8) {
+          Circle()
+            .fill(Color.pink)
+            .frame(width: 8, height: 8)
+          Text("Pink ball · \(carrier.profile.displayName)")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+          Spacer(minLength: 0)
+          Text("Hole \(activePinkBallHole)")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.white.opacity(0.75))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.pink.opacity(0.28))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+          "Pink ball on hole \(activePinkBallHole): \(carrier.profile.displayName)"
+        )
       }
 
       HoleBattleStrip(match: match)
@@ -236,9 +261,46 @@ struct LiveMatchBattleCard: View {
     .shadow(color: BrandColors.primary.opacity(0.45), radius: 12, y: 6)
   }
 
-  private func names(for side: String) -> String {
-    let list = match.players.filter { $0.side == side }.map(\.profile.displayName)
-    return list.isEmpty ? "TBD" : list.joined(separator: "\n")
+  @ViewBuilder
+  private func playerNamesColumn(side: String, alignment: HorizontalAlignment) -> some View {
+    let players = match.players.filter { $0.side == side }
+    if players.isEmpty {
+      Text("TBD")
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(.white)
+    } else {
+      VStack(alignment: alignment, spacing: 2) {
+        ForEach(players) { player in
+          let hasPink = currentPinkBallCarrier?.profileId == player.profileId
+          HStack(spacing: 5) {
+            if alignment == .trailing { Spacer(minLength: 0) }
+            if hasPink, alignment == .trailing {
+              pinkBallNameBadge()
+            }
+            Text(player.profile.displayName)
+              .font(.subheadline.weight(.medium))
+              .foregroundStyle(.white)
+              .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
+            if hasPink, alignment == .leading {
+              pinkBallNameBadge()
+            }
+            if alignment == .leading { Spacer(minLength: 0) }
+          }
+        }
+      }
+      .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  private func pinkBallNameBadge() -> some View {
+    Text("PINK")
+      .font(.system(size: 9, weight: .bold))
+      .foregroundStyle(.white)
+      .padding(.horizontal, 5)
+      .padding(.vertical, 2)
+      .background(Color.pink)
+      .clipShape(Capsule())
+      .accessibilityLabel("Has the pink ball")
   }
 }
 
