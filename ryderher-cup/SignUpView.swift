@@ -20,85 +20,135 @@ struct SignUpView: View {
     return Double(trimmed)
   }
 
+  private var canSubmit: Bool {
+    !email.isEmpty && password.count >= 8 && passwordsMatch
+      && !tournamentCode.isEmpty && !ghinNumber.isEmpty
+      && handicapIndex != nil && !isSubmitting
+  }
+
   var body: some View {
-    Form {
-      Section {
+    ScrollView {
+      VStack(spacing: 20) {
+        BrandLogoMark(maxWidth: 160)
+          .padding(.top, 8)
+
         Text("Use the email you were invited with and the tournament code from your organizer.")
           .font(.footnote)
-          .foregroundStyle(.secondary)
-      }
+          .foregroundStyle(BrandColors.onPrimary.opacity(0.75))
+          .multilineTextAlignment(.center)
+          .padding(.horizontal, 28)
 
-      Section {
-        TextField("Email", text: $email)
-          .textContentType(.emailAddress)
-          .textInputAutocapitalization(.never)
-          .keyboardType(.emailAddress)
-        SecureField("Password (min 8 characters)", text: $password)
-          .textContentType(.newPassword)
-        SecureField("Confirm password", text: $confirmPassword)
-          .textContentType(.newPassword)
-        TextField("Tournament code", text: $tournamentCode)
-          .textInputAutocapitalization(.never)
-      }
-
-      Section("Handicap") {
-        TextField("GHIN number", text: $ghinNumber)
-          .keyboardType(.numberPad)
-          .textInputAutocapitalization(.never)
-        TextField("Handicap Index (if GHIN lookup unavailable)", text: $handicapIndexText)
-          .keyboardType(.decimalPad)
-        Text("Enter your GHIN. If official lookup isn’t configured yet, also enter your Handicap Index.")
-          .font(.footnote)
-          .foregroundStyle(.secondary)
-      }
-
-      if !password.isEmpty, !passwordsMatch {
-        Section {
-          Text("Passwords do not match.")
-            .foregroundStyle(.orange)
-            .font(.footnote)
-        }
-      }
-
-      if let err = sessionManager.authError {
-        Section {
-          Text(err)
-            .foregroundStyle(.red)
-            .font(.footnote)
-        }
-      }
-
-      Section {
-        Button {
-          Task {
-            isSubmitting = true
-            defer { isSubmitting = false }
-            await sessionManager.signUp(
-              email: email,
-              password: password,
-              tournamentCode: tournamentCode,
-              ghinNumber: ghinNumber,
-              handicapIndex: handicapIndex
-            )
+        VStack(alignment: .leading, spacing: 14) {
+          sectionLabel("Account")
+          brandedField("Email") {
+            TextField("Email", text: $email)
+              .textContentType(.emailAddress)
+              .textInputAutocapitalization(.never)
+              .keyboardType(.emailAddress)
           }
-        } label: {
-          if isSubmitting {
-            ProgressView()
-              .frame(maxWidth: .infinity)
-          } else {
-            Text("Create account")
-              .frame(maxWidth: .infinity)
+          brandedField("Password (min 8)") {
+            SecureField("Password", text: $password)
+              .textContentType(.newPassword)
           }
+          brandedField("Confirm password") {
+            SecureField("Confirm password", text: $confirmPassword)
+              .textContentType(.newPassword)
+          }
+          brandedField("Tournament code") {
+            TextField("Tournament code", text: $tournamentCode)
+              .textInputAutocapitalization(.never)
+          }
+
+          sectionLabel("Handicap")
+          brandedField("GHIN number") {
+            TextField("GHIN number", text: $ghinNumber)
+              .keyboardType(.numberPad)
+              .textInputAutocapitalization(.never)
+          }
+          brandedField("Handicap Index") {
+            TextField("e.g. 8.4", text: $handicapIndexText)
+              .keyboardType(.decimalPad)
+          }
+          Text("Enter your GHIN. If official lookup isn’t configured yet, also enter your Handicap Index.")
+            .font(.caption)
+            .foregroundStyle(BrandColors.onPrimary.opacity(0.65))
+
+          if !password.isEmpty, !passwordsMatch {
+            Text("Passwords do not match.")
+              .font(.footnote)
+              .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.45))
+          }
+
+          if let err = sessionManager.authError {
+            Text(err)
+              .font(.footnote)
+              .foregroundStyle(Color(red: 1, green: 0.72, blue: 0.72))
+          }
+
+          Button {
+            Task {
+              isSubmitting = true
+              defer { isSubmitting = false }
+              await sessionManager.signUp(
+                email: email,
+                password: password,
+                tournamentCode: tournamentCode,
+                ghinNumber: ghinNumber,
+                handicapIndex: handicapIndex
+              )
+            }
+          } label: {
+            if isSubmitting {
+              ProgressView()
+                .tint(BrandColors.onPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            } else {
+              Text("Create account")
+            }
+          }
+          .buttonStyle(BrandPrimaryButtonStyle(isEnabled: canSubmit))
+          .disabled(!canSubmit)
         }
-        .disabled(
-          email.isEmpty || password.count < 8 || !passwordsMatch
-            || tournamentCode.isEmpty || ghinNumber.isEmpty
-            || handicapIndex == nil || isSubmitting
-        )
+        .padding(20)
+        .background(BrandColors.primarySoft.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, 20)
       }
+      .padding(.bottom, 40)
     }
+    .scrollDismissesKeyboard(.interactively)
+    .background(BrandColors.primary.ignoresSafeArea())
     .navigationTitle("Create account")
     .navigationBarTitleDisplayMode(.inline)
-    .scrollDismissesKeyboard(.interactively)
+    .toolbarBackground(BrandColors.primary, for: .navigationBar)
+    .toolbarBackground(.visible, for: .navigationBar)
+    .toolbarColorScheme(.dark, for: .navigationBar)
+  }
+
+  private func sectionLabel(_ text: String) -> some View {
+    Text(text.uppercased())
+      .font(.caption2.weight(.bold))
+      .tracking(0.8)
+      .foregroundStyle(BrandColors.onPrimary.opacity(0.55))
+      .padding(.top, 4)
+  }
+
+  private func brandedField<Content: View>(
+    _ title: String,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(title)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(BrandColors.onPrimary.opacity(0.7))
+      content()
+        .foregroundStyle(BrandColors.onPrimary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .background(BrandColors.primary.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .tint(BrandColors.onPrimary)
+    }
   }
 }

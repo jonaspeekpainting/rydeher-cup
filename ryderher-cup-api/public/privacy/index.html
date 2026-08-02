@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Ryde-Her Cup</title>
+  <style>
+    :root {
+      --ink: #2e263d;
+      --muted: #5c5470;
+      --bg: #f5f3f8;
+      --card: #ffffff;
+      --accent: #3f3651;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+    }
+    header {
+      background: var(--accent);
+      color: #fff;
+      padding: 2.5rem 1.25rem 2rem;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.75rem;
+      font-weight: 600;
+    }
+    header p {
+      margin: 0.5rem 0 0;
+      opacity: 0.8;
+      font-size: 0.95rem;
+    }
+    main {
+      max-width: 40rem;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+    section {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1rem;
+      border: 1px solid rgba(63, 54, 81, 0.12);
+    }
+    h2 {
+      margin: 0 0 0.65rem;
+      font-size: 1.15rem;
+      color: var(--accent);
+    }
+    p, li { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 0.95rem; color: var(--muted); }
+    ul { padding-left: 1.2rem; margin: 0.4rem 0; }
+    li { margin-bottom: 0.35rem; }
+    a { color: var(--accent); }
+    footer {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-align: center;
+      padding-bottom: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Ryde-Her Cup</h1>
+    <p>Privacy Policy · Effective August 2, 2026</p>
+  </header>
+  <main>
+    <section>
+      <h2>Overview</h2>
+      <p>
+        Ryde-Her Cup (“the App”) is a private tournament companion for invited golfers.
+        This policy explains what information we collect, how we use it, and your choices.
+        By using the App, you agree to this policy.
+      </p>
+    </section>
+
+    <section>
+      <h2>Information we collect</h2>
+      <ul>
+        <li><strong>Account information:</strong> email address and a hashed password.</li>
+        <li><strong>Profile &amp; golf data:</strong> display name (from your invitation), GHIN number, handicap index, team assignment, and tournament role (player or admin).</li>
+        <li><strong>Tournament activity:</strong> match pairings, hole scores, pink-ball selections, skins results, and related standings data you or co-players enter.</li>
+        <li><strong>Device security (optional):</strong> if you enable biometric lock, Face ID / Touch ID is used only on-device via Apple’s APIs. Biometric templates never leave your device and are not sent to our servers.</li>
+        <li><strong>Technical data:</strong> standard server logs (e.g. timestamps, approximate IP) needed to operate and secure the API.</li>
+      </ul>
+      <p>We do not sell your personal information. We do not use advertising trackers in the App.</p>
+    </section>
+
+    <section>
+      <h2>How we use information</h2>
+      <ul>
+        <li>Authenticate you and enforce invite-only access.</li>
+        <li>Display scoreboards, matchups, scorecards, skins, and winnings for the tournament.</li>
+        <li>Allow admins to manage sessions, pairings, and match status.</li>
+        <li>Maintain and troubleshoot the service.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Where data is stored</h2>
+      <p>
+        Account and tournament data are stored on our hosted backend (currently Neon Postgres via our API at
+        <code>rydeher-cup.vercel.app</code>). Auth tokens are stored securely in the iOS Keychain on your device.
+      </p>
+    </section>
+
+    <section>
+      <h2>Third parties</h2>
+      <p>
+        We may look up official handicap information using your GHIN number through a handicap data provider when that integration is configured.
+        Hosting/infrastructure providers process data only to run the service.
+        We do not share your data with advertisers.
+      </p>
+    </section>
+
+    <section>
+      <h2>Retention</h2>
+      <p>
+        We keep account and tournament data for the life of the tournament and a reasonable period afterward for records,
+        or until you request deletion (subject to organizer needs for the event).
+      </p>
+    </section>
+
+    <section>
+      <h2>Your choices</h2>
+      <ul>
+        <li>You can disable biometric lock anytime in Settings.</li>
+        <li>You can sign out from Settings.</li>
+        <li>To update or delete your account data, contact the organizer at the email below.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Children</h2>
+      <p>The App is not directed at children under 13. We do not knowingly collect data from children under 13.</p>
+    </section>
+
+    <section>
+      <h2>Changes</h2>
+      <p>We may update this policy. The “Effective” date at the top will change when we do. Continued use after changes means you accept the updated policy.</p>
+    </section>
+
+    <section>
+      <h2>Contact</h2>
+      <p>
+        Questions or deletion requests:
+        <a href="mailto:YOUR_SUPPORT_EMAIL">YOUR_SUPPORT_EMAIL</a>
+      </p>
+      <p>Replace this address before publishing.</p>
+    </section>
+  </main>
+  <footer>© 2026 Ryde-Her Cup</footer>
+</body>
+</html>

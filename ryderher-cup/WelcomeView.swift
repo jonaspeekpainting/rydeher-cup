@@ -5,52 +5,37 @@ struct WelcomeView: View {
   let onSignUp: () -> Void
 
   var body: some View {
-    VStack(spacing: 32) {
-      Spacer(minLength: 24)
+    VStack(spacing: 0) {
+      Spacer(minLength: 40)
 
-      VStack(spacing: 12) {
-        Image(systemName: "figure.golf")
-          .font(.system(size: 56))
-          .symbolRenderingMode(.hierarchical)
-          .foregroundStyle(.tint)
+      BrandLogoMark(maxWidth: 260, showsWordmark: true)
+        .padding(.horizontal, 36)
 
-        Text("RyderHer Cup")
-          .font(.largeTitle.weight(.bold))
-          .multilineTextAlignment(.center)
-
-        Text("Tournament hub for scores, pairings, and updates.")
-          .font(.body)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-          .padding(.horizontal)
-      }
+      Text("Tournament hub for scores, pairings, and updates.")
+        .font(.body)
+        .foregroundStyle(BrandColors.onPrimary.opacity(0.78))
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 36)
+        .padding(.top, 16)
 
       Spacer()
 
-      VStack(spacing: 14) {
+      VStack(spacing: 12) {
         Button(action: onSignUp) {
           Text("Create account")
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
+        .buttonStyle(BrandPrimaryButtonStyle())
 
         Button(action: onSignIn) {
           Text("Sign in")
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
+        .buttonStyle(BrandSecondaryButtonStyle())
       }
-      .padding(.horizontal, 24)
-      .padding(.bottom, 32)
+      .padding(.horizontal, 28)
+      .padding(.bottom, 40)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(.systemGroupedBackground))
+    .background(BrandColors.primary.ignoresSafeArea())
     .toolbar(.hidden, for: .navigationBar)
   }
 }

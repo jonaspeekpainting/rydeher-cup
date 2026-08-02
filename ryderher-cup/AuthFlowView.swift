@@ -23,5 +23,6 @@ struct AuthFlowView: View {
         }
       }
     }
+    .tint(BrandColors.onPrimary)
   }
 }

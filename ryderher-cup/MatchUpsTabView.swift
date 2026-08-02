@@ -7,8 +7,35 @@ struct MatchUpsTabView: View {
   @State private var loadError: String?
   @State private var isLoading = true
 
-  private var unassigned: [TournamentMatch] {
-    matches.filter { $0.sessionId == nil }
+  private var myUserId: UUID? {
+    sessionManager.profile?.id
+  }
+
+  private var isAdmin: Bool {
+    sessionManager.profile?.isAdmin == true
+  }
+
+  /// Players only see matches they are in; admins see all.
+  /// Completed matches drop off this tab — they live on the scoreboard.
+  private var visibleMatches: [TournamentMatch] {
+    matches.filter { match in
+      guard match.status != .complete else { return false }
+      if isAdmin { return true }
+      guard let myUserId else { return false }
+      return match.players.contains { $0.profileId == myUserId }
+    }
+  }
+
+  private var liveMatches: [TournamentMatch] {
+    visibleMatches
+      .filter { $0.status == .inProgress }
+      .sorted { $0.sortOrder < $1.sortOrder }
+  }
+
+  private var upcomingMatches: [TournamentMatch] {
+    visibleMatches
+      .filter { $0.status == .setup }
+      .sorted { $0.sortOrder < $1.sortOrder }
   }
 
   var body: some View {
@@ -22,47 +49,57 @@ struct MatchUpsTabView: View {
           systemImage: "exclamationmark.triangle",
           description: Text(loadError)
         )
-      } else if matches.isEmpty {
+      } else if visibleMatches.isEmpty {
         ContentUnavailableView(
-          "Match ups",
+          "No active match ups",
           systemImage: "person.line.dotted.person",
-          description: Text("Pairings will appear once the admin sets matches.")
+          description: Text(
+            isAdmin
+              ? "Create matches in Admin, or wait for a round to start."
+              : "You’ll only see matches you’re playing. Completed matches move to the Scoreboard."
+          )
         )
       } else {
-        List {
-          ForEach(sessions) { session in
-            let sessionMatches = matches.filter { $0.sessionId == session.id }
-            if !sessionMatches.isEmpty {
-              Section(session.label) {
-                ForEach(sessionMatches) { match in
+        ScrollView {
+          VStack(alignment: .leading, spacing: 20) {
+            ForEach(liveMatches) { match in
+              NavigationLink {
+                MatchDetailView(matchId: match.id)
+              } label: {
+                LiveMatchBattleCard(match: match)
+              }
+              .buttonStyle(.plain)
+            }
+
+            if !upcomingMatches.isEmpty {
+              VStack(alignment: .leading, spacing: 10) {
+                BrandSectionHeader(title: "Upcoming")
+
+                ForEach(upcomingMatches) { match in
                   NavigationLink {
                     MatchDetailView(matchId: match.id)
                   } label: {
-                    MatchUpsRow(match: match)
+                    UpcomingMatchCard(match: match, sessionLabel: sessionLabel(for: match))
                   }
+                  .buttonStyle(.plain)
                 }
               }
             }
           }
-
-          if !unassigned.isEmpty {
-            Section("Unscheduled") {
-              ForEach(unassigned) { match in
-                NavigationLink {
-                  MatchDetailView(matchId: match.id)
-                } label: {
-                  MatchUpsRow(match: match)
-                }
-              }
-            }
-          }
+          .padding()
         }
-        .listStyle(.insetGrouped)
+        .background(BrandScreenBackground())
       }
     }
     .navigationTitle("Match Ups")
+    .toolbarBackground(BrandColors.canvas, for: .navigationBar)
     .task { await load() }
     .refreshable { await load() }
+  }
+
+  private func sessionLabel(for match: TournamentMatch) -> String? {
+    guard let sessionId = match.sessionId else { return nil }
+    return sessions.first { $0.id == sessionId }?.label
   }
 
   private func load() async {
@@ -81,35 +118,245 @@ struct MatchUpsTabView: View {
   }
 }
 
-private struct MatchUpsRow: View {
+/// Live match hero: hole-by-hole winners + running score.
+struct LiveMatchBattleCard: View {
+  let match: TournamentMatch
+  var showsCallToAction: Bool = true
+
+  private var hookersNames: String {
+    names(for: "hookers")
+  }
+
+  private var slicersNames: String {
+    names(for: "slicers")
+  }
+
+  private var holesUpText: String {
+    guard let result = match.result else { return "AS" }
+    let diff = result.holesWonHookers - result.holesWonSlicers
+    if diff == 0 { return "AS" }
+    if diff > 0 { return "\(diff) UP" }
+    return "\(abs(diff)) UP"
+  }
+
+  private var leadingSide: String? {
+    guard let result = match.result else { return nil }
+    let diff = result.holesWonHookers - result.holesWonSlicers
+    if diff > 0 { return "hookers" }
+    if diff < 0 { return "slicers" }
+    return nil
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack {
+        Label("LIVE", systemImage: "circle.fill")
+          .font(.caption.weight(.bold))
+          .foregroundStyle(.white)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 5)
+          .background(Color.red)
+          .clipShape(Capsule())
+
+        Spacer()
+
+        if let format = match.format {
+          Text(format.title)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.white.opacity(0.85))
+        }
+      }
+
+      Text(match.label)
+        .font(.title3.weight(.bold))
+        .foregroundStyle(.white)
+
+      HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Hookers")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.7))
+          Text(hookersNames)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.white)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        VStack(spacing: 2) {
+          Text(holesUpText)
+            .font(.title2.weight(.heavy).monospacedDigit())
+            .foregroundStyle(.white)
+          if let leading = leadingSide {
+            Text(leading == "hookers" ? "Hookers" : "Slicers")
+              .font(.caption2.weight(.bold))
+              .foregroundStyle(.white.opacity(0.8))
+          } else {
+            Text("All square")
+              .font(.caption2.weight(.bold))
+              .foregroundStyle(.white.opacity(0.8))
+          }
+          if let result = match.result {
+            Text("\(result.holesWonHookers) – \(result.holesWonSlicers)")
+              .font(.caption.monospacedDigit())
+              .foregroundStyle(.white.opacity(0.75))
+          }
+        }
+
+        VStack(alignment: .trailing, spacing: 4) {
+          Text("Slicers")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white.opacity(0.7))
+          Text(slicersNames)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.trailing)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+      }
+
+      HoleBattleStrip(match: match)
+
+      if showsCallToAction, match.canScore {
+        HStack {
+          Image(systemName: "square.and.pencil")
+          Text("Tap to score · Hole \(match.currentHoleNumber)")
+          Spacer()
+          Image(systemName: "chevron.right")
+            .font(.caption.weight(.semibold))
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.white.opacity(0.9))
+      }
+    }
+    .padding(16)
+    .background(BrandColors.liveGradient)
+    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    .shadow(color: BrandColors.primary.opacity(0.45), radius: 12, y: 6)
+  }
+
+  private func names(for side: String) -> String {
+    let list = match.players.filter { $0.side == side }.map(\.profile.displayName)
+    return list.isEmpty ? "TBD" : list.joined(separator: "\n")
+  }
+}
+
+struct HoleBattleStrip: View {
   let match: TournamentMatch
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(match.label)
-        .font(.body.weight(.medium))
-      HStack(spacing: 8) {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Hole by hole")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.white.opacity(0.7))
+
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 6) {
+          ForEach(1 ... 18, id: \.self) { hole in
+            holeCell(hole)
+          }
+        }
+      }
+    }
+  }
+
+  private func holeCell(_ hole: Int) -> some View {
+    let outcome = match.holeOutcomes?.first { $0.holeNumber == hole }
+    let played = outcome != nil
+      || (match.holeScores?.contains { $0.holeNumber == hole } ?? false)
+
+    return VStack(spacing: 4) {
+      Text("\(hole)")
+        .font(.caption2.weight(.bold).monospacedDigit())
+        .foregroundStyle(.white.opacity(0.7))
+
+      Circle()
+        .fill(fill(for: outcome, played: played))
+        .frame(width: 22, height: 22)
+        .overlay {
+          if let outcome {
+            Text(symbol(for: outcome))
+              .font(.system(size: 9, weight: .bold))
+              .foregroundStyle(.white)
+          } else if !played {
+            Text("·")
+              .foregroundStyle(.white.opacity(0.35))
+          }
+        }
+    }
+    .frame(width: 28)
+  }
+
+  private func fill(for outcome: MatchHoleOutcome?, played: Bool) -> Color {
+    guard played else {
+      return Color.white.opacity(0.12)
+    }
+    guard let outcome else {
+      return Color.white.opacity(0.2)
+    }
+    switch outcome.winnerSide {
+    case "hookers":
+      return BrandColors.hookers
+    case "slicers":
+      return BrandColors.slicers
+    default:
+      return Color.white.opacity(0.35)
+    }
+  }
+
+  private func symbol(for outcome: MatchHoleOutcome) -> String {
+    switch outcome.winnerSide {
+    case "hookers": return "H"
+    case "slicers": return "S"
+    default: return "="
+    }
+  }
+}
+
+private struct UpcomingMatchCard: View {
+  let match: TournamentMatch
+  let sessionLabel: String?
+
+  var body: some View {
+    BrandCard(padding: 14) {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          Text(match.label)
+            .font(.headline)
+            .foregroundStyle(BrandColors.ink)
+          Spacer()
+          Text("Upcoming")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(BrandColors.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(BrandColors.primary.opacity(0.10))
+            .clipShape(Capsule())
+        }
+
         if let format = match.format {
           Text(format.title)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(BrandColors.inkMuted)
         }
-        Text(match.scoringVisibility == .live ? "Live" : "Release later")
-          .font(.caption2)
-          .padding(.horizontal, 6)
+
+        if let sessionLabel {
+          Text(sessionLabel)
+            .font(.caption2)
+            .foregroundStyle(BrandColors.inkMuted.opacity(0.85))
+        }
+
+        Rectangle()
+          .fill(BrandColors.hairline)
+          .frame(height: 1)
           .padding(.vertical, 2)
-          .background(
-            (match.scoringVisibility == .live ? Color.green : Color.orange)
-              .opacity(0.15)
-          )
-          .clipShape(Capsule())
+
+        Text(pairingSummary)
+          .font(.subheadline)
+          .foregroundStyle(BrandColors.ink.opacity(0.85))
       }
-      Text(pairingSummary)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .lineLimit(2)
     }
-    .padding(.vertical, 2)
   }
 
   private var pairingSummary: String {
@@ -117,6 +364,6 @@ private struct MatchUpsRow: View {
     let slicers = match.players.filter { $0.side == "slicers" }.map(\.profile.displayName)
     let left = hookers.isEmpty ? "TBD" : hookers.joined(separator: " / ")
     let right = slicers.isEmpty ? "TBD" : slicers.joined(separator: " / ")
-    return "\(left) vs \(right)"
+    return "\(left)  vs  \(right)"
   }
 }

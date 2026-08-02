@@ -20,6 +20,11 @@ import {
   type PlayerHandicapInput,
 } from "./handicaps";
 import { profileResponse } from "./profile";
+import {
+  computePinkBallScore,
+  PINK_BALLS_PER_MATCH,
+  type PinkBallScoreSummary,
+} from "./pink-ball";
 
 type Snap = PlayingHandicapSnapshot;
 
@@ -52,6 +57,40 @@ export type MatchResultView = {
   holes_halved: number;
 };
 
+export type MatchCourseHoleView = {
+  hole_number: number;
+  par: number;
+  stroke_index: number | null;
+  yardage: number | null;
+};
+
+export type MatchCourseView = {
+  id: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  tee: {
+    id: string;
+    name: string;
+    color: string | null;
+    rating: number | null;
+    slope: number | null;
+  } | null;
+  holes: MatchCourseHoleView[];
+};
+
+export { PINK_BALLS_PER_MATCH };
+
+export function supportsPinkBall(format: MatchFormat | null | undefined): boolean {
+  return format === "best_ball_match";
+}
+
+export type PinkBallHoleView = {
+  hole_number: number;
+  carrier_profile_id: string;
+  lost: boolean;
+};
+
 export type MatchDetail = {
   id: string;
   label: string;
@@ -69,8 +108,13 @@ export type MatchDetail = {
   hole_scores: HoleScoreView[] | null;
   hole_outcomes: MatchHoleOutcomeView[] | null;
   result: MatchResultView | null;
+  course: MatchCourseView | null;
   can_score: boolean;
   scores_visible: boolean;
+  pink_ball_holes: PinkBallHoleView[] | null;
+  pink_balls_remaining: number | null;
+  pink_balls_lost: number | null;
+  pink_ball_score: PinkBallScoreSummary | null;
 };
 
 function parseSnapshot(raw: unknown): Snap | null {
@@ -124,7 +168,9 @@ export async function fetchMatchDetail(
   }
 
   const players = await fetchMatchPlayers(matchId);
-  const isParticipant = players.some((p) => p.profile_id === viewer.sub);
+  const isParticipant = players.some(
+    (p) => p.profile_id.toLowerCase() === viewer.sub.toLowerCase(),
+  );
   const visible = scoresVisibleToViewer({
     scoringVisibility: match.scoring_visibility,
     status: match.status,
@@ -135,6 +181,10 @@ export async function fetchMatchDetail(
   let holeScores: HoleScoreView[] | null = null;
   let holeOutcomes: MatchHoleOutcomeView[] | null = null;
   let result: MatchResultView | null = null;
+  let pinkBallHoles: PinkBallHoleView[] | null = null;
+  let pinkBallsLost: number | null = null;
+  let pinkBallsRemaining: number | null = null;
+  let pinkBallScore: PinkBallScoreSummary | null = null;
 
   if (visible) {
     const scores = await sql<HoleScoreRow>`
@@ -187,6 +237,56 @@ export async function fetchMatchDetail(
         holes_halved: r.holes_halved,
       };
     }
+
+    if (supportsPinkBall(match.format)) {
+      const pinkRows = await sql<{
+        hole_number: number;
+        carrier_profile_id: string;
+        lost: boolean;
+      }>`
+        SELECT hole_number, carrier_profile_id, lost
+        FROM pink_ball_holes
+        WHERE match_id = ${matchId}
+        ORDER BY hole_number ASC
+      `;
+      pinkBallHoles = pinkRows.rows.map((row) => ({
+        hole_number: row.hole_number,
+        carrier_profile_id: row.carrier_profile_id,
+        lost: row.lost,
+      }));
+      pinkBallsLost = pinkBallHoles.filter((h) => h.lost).length;
+      pinkBallsRemaining = Math.max(0, PINK_BALLS_PER_MATCH - pinkBallsLost);
+    }
+  }
+
+  const course = await loadMatchCourse(match.course_id, match.tee_id);
+
+  if (visible && supportsPinkBall(match.format) && pinkBallHoles) {
+    const snap = parseSnapshot(match.playing_handicaps);
+    pinkBallScore = computePinkBallScore({
+      pinkHoles: pinkBallHoles.map((h) => ({
+        holeNumber: h.hole_number,
+        carrierProfileId: h.carrier_profile_id,
+        lost: h.lost,
+      })),
+      scores: (holeScores ?? [])
+        .filter((s) => s.profile_id != null)
+        .map((s) => ({
+          holeNumber: s.hole_number,
+          profileId: s.profile_id!,
+          grossStrokes: s.gross_strokes,
+        })),
+      strokeIndexes: (course?.holes ?? []).map((h) => ({
+        holeNumber: h.hole_number,
+        strokeIndex: h.stroke_index ?? h.hole_number,
+      })),
+      players: (snap?.players ?? []).map((p) => ({
+        profileId: p.profileId,
+        relativeStrokes: p.relativeStrokes,
+      })),
+    });
+    pinkBallsLost = pinkBallScore.balls_lost;
+    pinkBallsRemaining = pinkBallScore.balls_remaining;
   }
 
   return {
@@ -206,8 +306,13 @@ export async function fetchMatchDetail(
     hole_scores: holeScores,
     hole_outcomes: holeOutcomes,
     result,
-    can_score: isParticipant && match.status !== "complete",
+    course,
+    can_score: (isParticipant || viewer.isAdmin) && match.status !== "complete",
     scores_visible: visible,
+    pink_ball_holes: pinkBallHoles,
+    pink_balls_remaining: pinkBallsRemaining,
+    pink_balls_lost: pinkBallsLost,
+    pink_ball_score: pinkBallScore,
   };
 }
 
@@ -321,6 +426,68 @@ export async function recomputeMatchResult(matchId: string): Promise<void> {
     // Scramble / alternate shot — also match play hole-by-hole on team nets
     await recomputeMatchPlayLike(match, snapshot, holes, scores.rows, format);
   }
+}
+
+async function loadMatchCourse(
+  courseId: string | null,
+  teeId: string | null,
+): Promise<MatchCourseView | null> {
+  if (!courseId) {
+    return null;
+  }
+
+  const courseResult = await sql<{
+    id: string;
+    name: string;
+    city: string | null;
+    state: string | null;
+  }>`
+    SELECT id, name, city, state FROM courses WHERE id = ${courseId} LIMIT 1
+  `;
+  const course = courseResult.rows[0];
+  if (!course) {
+    return null;
+  }
+
+  let tee: MatchCourseView["tee"] = null;
+  if (teeId) {
+    const teeResult = await sql<{
+      id: string;
+      name: string;
+      color: string | null;
+      rating: string | null;
+      slope: number | null;
+    }>`
+      SELECT id, name, color, rating, slope
+      FROM course_tees WHERE id = ${teeId} LIMIT 1
+    `;
+    if (teeResult.rows[0]) {
+      const t = teeResult.rows[0];
+      tee = {
+        id: t.id,
+        name: t.name,
+        color: t.color,
+        rating: t.rating != null ? Number(t.rating) : null,
+        slope: t.slope,
+      };
+    }
+  }
+
+  const holes = await loadCourseHoles(courseId, teeId);
+
+  return {
+    id: course.id,
+    name: course.name,
+    city: course.city,
+    state: course.state,
+    tee,
+    holes: holes.map((h) => ({
+      hole_number: h.hole_number,
+      par: h.par,
+      stroke_index: h.stroke_index,
+      yardage: h.yardage,
+    })),
+  };
 }
 
 async function loadCourseHoles(

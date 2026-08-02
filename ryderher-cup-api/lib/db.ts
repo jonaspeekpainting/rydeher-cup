@@ -1,15 +1,10 @@
-import {
-  createPool,
-  type QueryResult,
-  type QueryResultRow,
-  type VercelPool,
-} from "@vercel/postgres";
+import { Pool, type QueryResult, type QueryResultRow } from "pg";
 
 type Primitive = string | number | boolean | undefined | null;
 
-let pool: VercelPool | null = null;
+let pool: Pool | null = null;
 
-function getPool(): VercelPool {
+function getPool(): Pool {
   if (pool) {
     return pool;
   }
@@ -25,16 +20,23 @@ function getPool(): VercelPool {
     );
   }
 
-  pool = createPool({ connectionString });
+  pool = new Pool({ connectionString });
   return pool;
 }
 
-/** Tagged-template SQL client; uses Neon’s RYDEHER_POSTGRES_URL or POSTGRES_URL. */
+/**
+ * Tagged-template SQL client.
+ * Uses POSTGRES_URL / RYDEHER_POSTGRES_URL (local Docker or Neon).
+ */
 export function sql<O extends QueryResultRow>(
   strings: TemplateStringsArray,
   ...values: Primitive[]
 ): Promise<QueryResult<O>> {
-  return getPool().sql<O>(strings, ...values);
+  let text = strings[0] ?? "";
+  for (let i = 0; i < values.length; i += 1) {
+    text += `$${i + 1}${strings[i + 1] ?? ""}`;
+  }
+  return getPool().query<O>(text, values);
 }
 
 export type InviteRow = {
@@ -171,6 +173,15 @@ export type HoleScoreRow = {
   profile_id: string | null;
   side: TeamSlug | null;
   gross_strokes: number;
+  updated_by: string | null;
+  updated_at: string;
+};
+
+export type PinkBallHoleRow = {
+  match_id: string;
+  hole_number: number;
+  carrier_profile_id: string;
+  lost: boolean;
   updated_by: string | null;
   updated_at: string;
 };

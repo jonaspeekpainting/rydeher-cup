@@ -120,3 +120,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const detail = await fetchMatchDetail(id, auth);
   return json(detail);
 }
+
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof Response) {
+    return auth;
+  }
+
+  const { id } = await context.params;
+  const existing = await sql<{ id: string }>`
+    SELECT id FROM matches WHERE id = ${id} LIMIT 1
+  `;
+  if (!existing.rows[0]) {
+    return errorResponse("Match not found", 404);
+  }
+
+  await sql`DELETE FROM matches WHERE id = ${id}`;
+  return json({ ok: true });
+}

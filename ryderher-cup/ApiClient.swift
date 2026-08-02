@@ -29,6 +29,14 @@ struct AuthResponse: Decodable {
   let profile: UserProfile
 }
 
+struct BulkMatchesResponse: Decodable {
+  let matches: [TournamentMatch]
+}
+
+struct OkResponse: Decodable {
+  let ok: Bool
+}
+
 final class ApiClient {
   static let shared = ApiClient()
 
@@ -126,11 +134,29 @@ final class ApiClient {
     try await request(path: "/api/matches", method: "POST", body: body, token: token)
   }
 
+  func createSessionMatches(token: String, body: [String: Any]) async throws -> [TournamentMatch] {
+    let response: BulkMatchesResponse = try await request(
+      path: "/api/matches/bulk",
+      method: "POST",
+      body: body,
+      token: token
+    )
+    return response.matches
+  }
+
   func updateMatch(token: String, id: UUID, body: [String: Any]) async throws -> TournamentMatch {
     try await request(
       path: "/api/matches/\(id.uuidString)",
       method: "PATCH",
       body: body,
+      token: token
+    )
+  }
+
+  func deleteMatch(token: String, id: UUID) async throws {
+    let _: OkResponse = try await request(
+      path: "/api/matches/\(id.uuidString)",
+      method: "DELETE",
       token: token
     )
   }
@@ -158,11 +184,13 @@ final class ApiClient {
     matchId: UUID,
     hole: Int,
     playerScores: [[String: Any]]?,
-    sideScores: [[String: Any]]?
+    sideScores: [[String: Any]]?,
+    pinkBall: [String: Any]? = nil
   ) async throws -> TournamentMatch {
     var body: [String: Any] = [:]
     if let playerScores { body["player_scores"] = playerScores }
     if let sideScores { body["side_scores"] = sideScores }
+    if let pinkBall { body["pink_ball"] = pinkBall }
     return try await request(
       path: "/api/matches/\(matchId.uuidString)/holes/\(hole)",
       method: "PUT",

@@ -5,27 +5,30 @@ struct BiometricLockView: View {
   @State private var isUnlocking = false
 
   var body: some View {
-    VStack(spacing: 28) {
+    VStack(spacing: 24) {
       Spacer()
 
-      Image(systemName: BiometricAuth.biometricType == .faceID ? "faceid" : "lock.fill")
-        .font(.system(size: 52))
-        .symbolRenderingMode(.hierarchical)
-        .foregroundStyle(.tint)
+      BrandLogoMark(maxWidth: 200)
 
-      Text("Unlock RyderHer Cup")
-        .font(.title2.weight(.semibold))
+      Image(systemName: BiometricAuth.biometricType == .faceID ? "faceid" : "lock.fill")
+        .font(.system(size: 40))
+        .foregroundStyle(BrandColors.onPrimary.opacity(0.9))
+        .padding(.top, 8)
+
+      Text("Unlock Ryde-Her Cup")
+        .font(.title3.weight(.semibold))
+        .foregroundStyle(BrandColors.onPrimary)
 
       Text(BiometricAuth.reasonMessage())
         .font(.body)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(BrandColors.onPrimary.opacity(0.75))
         .multilineTextAlignment(.center)
         .padding(.horizontal, 32)
 
       if let err = sessionManager.authError {
         Text(err)
           .font(.footnote)
-          .foregroundStyle(.red)
+          .foregroundStyle(Color(red: 1, green: 0.72, blue: 0.72))
           .multilineTextAlignment(.center)
           .padding(.horizontal)
       }
@@ -39,22 +42,21 @@ struct BiometricLockView: View {
       } label: {
         if isUnlocking {
           ProgressView()
+            .tint(BrandColors.onPrimary)
             .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
         } else {
           Text("Unlock")
-            .font(.headline)
-            .frame(maxWidth: .infinity)
         }
       }
-      .buttonStyle(.borderedProminent)
-      .controlSize(.large)
+      .buttonStyle(BrandPrimaryButtonStyle())
       .padding(.horizontal, 40)
       .padding(.top, 8)
 
       Spacer()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(.systemGroupedBackground))
+    .background(BrandColors.primary.ignoresSafeArea())
     .task {
       await sessionManager.unlockWithBiometrics()
     }

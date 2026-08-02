@@ -22,6 +22,11 @@ enum MatchFormat: String, Codable, CaseIterable, Identifiable {
   var usesTeamBall: Bool {
     self == .scramble || self == .alternateShot
   }
+
+  /// Pink ball side game runs only on 2v2 best ball.
+  var supportsPinkBall: Bool {
+    self == .bestBallMatch
+  }
 }
 
 enum ScoringVisibility: String, Codable, CaseIterable {
@@ -86,6 +91,54 @@ struct HoleScore: Codable, Hashable {
   }
 }
 
+struct PinkBallHole: Codable, Hashable {
+  let holeNumber: Int
+  let carrierProfileId: UUID
+  let lost: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case lost
+    case holeNumber = "hole_number"
+    case carrierProfileId = "carrier_profile_id"
+  }
+}
+
+struct PinkBallHoleNet: Codable, Hashable, Identifiable {
+  var id: Int { holeNumber }
+  let holeNumber: Int
+  let carrierProfileId: UUID
+  let lost: Bool
+  let grossStrokes: Int?
+  let netStrokes: Int?
+  let counts: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case lost, counts
+    case holeNumber = "hole_number"
+    case carrierProfileId = "carrier_profile_id"
+    case grossStrokes = "gross_strokes"
+    case netStrokes = "net_strokes"
+  }
+}
+
+struct PinkBallScore: Codable, Hashable {
+  let totalNet: Int?
+  let holesCounted: Int
+  let ballsLost: Int
+  let ballsRemaining: Int
+  let eliminated: Bool
+  let holeNets: [PinkBallHoleNet]
+
+  enum CodingKeys: String, CodingKey {
+    case eliminated
+    case totalNet = "total_net"
+    case holesCounted = "holes_counted"
+    case ballsLost = "balls_lost"
+    case ballsRemaining = "balls_remaining"
+    case holeNets = "hole_nets"
+  }
+}
+
 struct MatchHoleOutcome: Codable, Hashable {
   let holeNumber: Int
   let winnerSide: String?
@@ -125,28 +178,268 @@ struct TournamentMatch: Codable, Identifiable, Hashable {
   let teeId: UUID?
   let scoringVisibility: ScoringVisibility
   let status: MatchStatus
+  let playingHandicaps: PlayingHandicapSnapshot?
   let updatedAt: String
   let players: [MatchPlayer]
   let holeScores: [HoleScore]?
   let holeOutcomes: [MatchHoleOutcome]?
   let result: MatchResult?
+  let course: MatchCourseInfo?
   let canScore: Bool
   let scoresVisible: Bool
+  let pinkBallHoles: [PinkBallHole]?
+  let pinkBallsRemaining: Int?
+  let pinkBallsLost: Int?
+  let pinkBallScore: PinkBallScore?
 
   enum CodingKeys: String, CodingKey {
-    case id, label, format, players, result, status
+    case id, label, format, players, result, status, course
     case sortOrder = "sort_order"
     case createdAt = "created_at"
     case sessionId = "session_id"
     case courseId = "course_id"
     case teeId = "tee_id"
     case scoringVisibility = "scoring_visibility"
+    case playingHandicaps = "playing_handicaps"
     case updatedAt = "updated_at"
     case holeScores = "hole_scores"
     case holeOutcomes = "hole_outcomes"
     case canScore = "can_score"
     case scoresVisible = "scores_visible"
+    case pinkBallHoles = "pink_ball_holes"
+    case pinkBallsRemaining = "pink_balls_remaining"
+    case pinkBallsLost = "pink_balls_lost"
+    case pinkBallScore = "pink_ball_score"
   }
+
+  static let pinkBallsPerMatch = 3
+
+  /// Opening holes that set the pink-ball rotation (one unique player each).
+  var pinkBallRotationLength: Int { players.count }
+
+  func pinkBall(forHole hole: Int) -> PinkBallHole? {
+    pinkBallHoles?.first { $0.holeNumber == hole }
+  }
+
+  func pinkBallNet(forHole hole: Int) -> PinkBallHoleNet? {
+    pinkBallScore?.holeNets.first { $0.holeNumber == hole }
+  }
+
+  /// True while the group is still choosing the opening rotation.
+  func canSelectPinkBallCarrier(forHole hole: Int) -> Bool {
+    format?.supportsPinkBall == true
+      && hole >= 1
+      && hole <= pinkBallRotationLength
+  }
+
+  /// Unique carriers already used on other opening-rotation holes.
+  func usedPinkBallCarriers(excludingHole hole: Int) -> Set<UUID> {
+    let n = pinkBallRotationLength
+    return Set(
+      (pinkBallHoles ?? [])
+        .filter { $0.holeNumber != hole && $0.holeNumber >= 1 && $0.holeNumber <= n }
+        .map(\.carrierProfileId)
+    )
+  }
+
+  /// Players still available to pick for an opening-rotation hole.
+  func selectablePinkBallCarriers(forHole hole: Int) -> [MatchPlayer] {
+    guard canSelectPinkBallCarrier(forHole: hole) else { return [] }
+    let used = usedPinkBallCarriers(excludingHole: hole)
+    return players.filter { !used.contains($0.profileId) }
+  }
+
+  /// Opening rotation order once holes 1…N each have a unique carrier.
+  func pinkBallRotationOrder() -> [UUID]? {
+    let n = pinkBallRotationLength
+    guard n > 0 else { return nil }
+    var order: [UUID] = []
+    var seen = Set<UUID>()
+    for h in 1 ... n {
+      guard let carrier = pinkBall(forHole: h)?.carrierProfileId,
+            seen.insert(carrier).inserted
+      else { return nil }
+      order.append(carrier)
+    }
+    return order
+  }
+
+  /// Carrier for this hole: chosen on 1…N, then locked to the rotation.
+  func assignedPinkBallCarrier(forHole hole: Int) -> UUID? {
+    guard format?.supportsPinkBall == true, !players.isEmpty else { return nil }
+    let n = pinkBallRotationLength
+    if hole <= n {
+      return pinkBall(forHole: hole)?.carrierProfileId
+        ?? selectablePinkBallCarriers(forHole: hole).first?.profileId
+    }
+    guard let rotation = pinkBallRotationOrder() else { return nil }
+    return rotation[(hole - 1) % n]
+  }
+
+  /// Suggested / locked carrier for the current hole.
+  func suggestedPinkBallCarrier(forHole hole: Int) -> UUID? {
+    assignedPinkBallCarrier(forHole: hole)
+  }
+
+  func par(forHole hole: Int) -> Int {
+    course?.holes.first(where: { $0.holeNumber == hole })?.par ?? 4
+  }
+
+  func holeInfo(_ hole: Int) -> MatchCourseHole? {
+    course?.holes.first(where: { $0.holeNumber == hole })
+  }
+
+  /// Stroke index for a hole (1 = hardest). Falls back to hole number.
+  func strokeIndex(forHole hole: Int) -> Int {
+    holeInfo(hole)?.strokeIndex ?? hole
+  }
+
+  /// Strokes this player (or their side, for team-ball formats) receives on a hole.
+  func strokesReceived(profileId: UUID, hole: Int) -> Int {
+    guard let snap = playingHandicaps else { return 0 }
+    let si = strokeIndex(forHole: hole)
+    if format?.usesTeamBall == true {
+      guard let player = players.first(where: { $0.profileId == profileId }),
+            let side = player.side,
+            let sideSnap = snap.sides.first(where: { $0.side == side })
+      else { return 0 }
+      return MatchHandicapMath.strokesOnHole(
+        relativeStrokes: sideSnap.relativeStrokes,
+        strokeIndex: si
+      )
+    }
+    guard let ph = snap.players.first(where: { $0.profileId == profileId }) else {
+      return 0
+    }
+    return MatchHandicapMath.strokesOnHole(
+      relativeStrokes: ph.relativeStrokes,
+      strokeIndex: si
+    )
+  }
+
+  func strokesReceived(side: String, hole: Int) -> Int {
+    guard let snap = playingHandicaps,
+          let sideSnap = snap.sides.first(where: { $0.side == side })
+    else { return 0 }
+    return MatchHandicapMath.strokesOnHole(
+      relativeStrokes: sideSnap.relativeStrokes,
+      strokeIndex: strokeIndex(forHole: hole)
+    )
+  }
+
+  func relativeStrokes(profileId: UUID) -> Int {
+    guard let snap = playingHandicaps else { return 0 }
+    if format?.usesTeamBall == true {
+      guard let player = players.first(where: { $0.profileId == profileId }),
+            let side = player.side,
+            let sideSnap = snap.sides.first(where: { $0.side == side })
+      else { return 0 }
+      return sideSnap.relativeStrokes
+    }
+    return snap.players.first(where: { $0.profileId == profileId })?.relativeStrokes ?? 0
+  }
+
+  func relativeStrokes(side: String) -> Int {
+    playingHandicaps?.sides.first(where: { $0.side == side })?.relativeStrokes ?? 0
+  }
+
+  /// First hole that doesn’t yet have a full set of scores (1–18).
+  var currentHoleNumber: Int {
+    for hole in 1 ... 18 {
+      if !isHoleComplete(hole) {
+        return hole
+      }
+    }
+    return 18
+  }
+
+  func isHoleComplete(_ hole: Int) -> Bool {
+    let scores = holeScores ?? []
+    if format?.usesTeamBall == true {
+      let hasHookers = scores.contains { $0.holeNumber == hole && $0.side == "hookers" }
+      let hasSlicers = scores.contains { $0.holeNumber == hole && $0.side == "slicers" }
+      return hasHookers && hasSlicers
+    }
+    guard !players.isEmpty else { return false }
+    return players.allSatisfy { player in
+      scores.contains { $0.holeNumber == hole && $0.profileId == player.profileId }
+    }
+  }
+}
+
+/// Playing-handicap snapshot stored when a match starts / is created.
+struct PlayingHandicapSnapshot: Codable, Hashable {
+  let format: String
+  let fieldMinimum: Int
+  let players: [PlayerPlayingHandicap]
+  let sides: [SidePlayingHandicap]
+}
+
+struct PlayerPlayingHandicap: Codable, Hashable {
+  let profileId: UUID
+  let side: String
+  let courseHandicap: Int
+  let allowanceStrokes: Int
+  let relativeStrokes: Int
+}
+
+struct SidePlayingHandicap: Codable, Hashable {
+  let side: String
+  let courseHandicaps: [Int]
+  let allowanceStrokes: Int
+  let relativeStrokes: Int
+  let profileIds: [UUID]
+}
+
+enum MatchHandicapMath {
+  /// Matches API `strokesOnHole`: relative strokes off the low player/side,
+  /// allocated to hardest holes first (stroke index 1 = hardest).
+  static func strokesOnHole(relativeStrokes: Int, strokeIndex: Int) -> Int {
+    guard relativeStrokes > 0, strokeIndex >= 1, strokeIndex <= 18 else { return 0 }
+    let full = relativeStrokes / 18
+    let rem = relativeStrokes % 18
+    return full + (strokeIndex <= rem ? 1 : 0)
+  }
+
+  static func difficultyLabel(strokeIndex: Int) -> String {
+    switch strokeIndex {
+    case 1: return "Hardest hole"
+    case 2, 3: return "Very hard"
+    case 16, 17, 18: return "Easiest"
+    default: return "HCP \(strokeIndex)"
+    }
+  }
+}
+
+struct MatchCourseHole: Codable, Hashable, Identifiable {
+  var id: Int { holeNumber }
+  let holeNumber: Int
+  let par: Int
+  let strokeIndex: Int?
+  let yardage: Int?
+
+  enum CodingKeys: String, CodingKey {
+    case par, yardage
+    case holeNumber = "hole_number"
+    case strokeIndex = "stroke_index"
+  }
+}
+
+struct MatchCourseTee: Codable, Hashable {
+  let id: UUID
+  let name: String
+  let color: String?
+  let rating: Double?
+  let slope: Int?
+}
+
+struct MatchCourseInfo: Codable, Hashable {
+  let id: UUID
+  let name: String
+  let city: String?
+  let state: String?
+  let tee: MatchCourseTee?
+  let holes: [MatchCourseHole]
 }
 
 struct StandingsMatchRow: Codable, Identifiable, Hashable {
@@ -176,11 +469,45 @@ struct StandingsSession: Codable, Identifiable, Hashable {
   let hookersPoints: Double
   let slicersPoints: Double
   let matches: [StandingsMatchRow]
+  let pinkBallStandings: [PinkBallMatchStanding]
+  let pinkBallLeader: PinkBallMatchStanding?
 
   enum CodingKeys: String, CodingKey {
     case session, matches
     case hookersPoints = "hookers_points"
     case slicersPoints = "slicers_points"
+    case pinkBallStandings = "pink_ball_standings"
+    case pinkBallLeader = "pink_ball_leader"
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    session = try c.decode(TournamentSession.self, forKey: .session)
+    hookersPoints = try c.decode(Double.self, forKey: .hookersPoints)
+    slicersPoints = try c.decode(Double.self, forKey: .slicersPoints)
+    matches = try c.decode([StandingsMatchRow].self, forKey: .matches)
+    pinkBallStandings = try c.decodeIfPresent([PinkBallMatchStanding].self, forKey: .pinkBallStandings) ?? []
+    pinkBallLeader = try c.decodeIfPresent(PinkBallMatchStanding.self, forKey: .pinkBallLeader)
+  }
+}
+
+struct PinkBallMatchStanding: Codable, Identifiable, Hashable {
+  var id: UUID { matchId }
+  let matchId: UUID
+  let matchLabel: String
+  let totalNet: Int?
+  let holesCounted: Int
+  let eliminated: Bool
+  let rank: Int?
+  let isLeader: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case eliminated, rank
+    case matchId = "match_id"
+    case matchLabel = "match_label"
+    case totalNet = "total_net"
+    case holesCounted = "holes_counted"
+    case isLeader = "is_leader"
   }
 }
 
@@ -189,12 +516,125 @@ struct CupStandings: Codable, Hashable {
   let slicersPoints: Double
   let sessions: [StandingsSession]
   let unassignedMatches: [StandingsMatchRow]
+  let skins: SkinsStandings?
+  let winnings: WinningsStandings?
 
   enum CodingKeys: String, CodingKey {
-    case sessions
+    case sessions, skins, winnings
     case hookersPoints = "hookers_points"
     case slicersPoints = "slicers_points"
     case unassignedMatches = "unassigned_matches"
+  }
+}
+
+struct SkinLeader: Codable, Identifiable, Hashable {
+  var id: UUID { profileId }
+  let profileId: UUID
+  let displayName: String
+  let teamSlug: String?
+  let skins: Int
+  let amount: Double?
+
+  enum CodingKeys: String, CodingKey {
+    case skins, amount
+    case profileId = "profile_id"
+    case displayName = "display_name"
+    case teamSlug = "team_slug"
+  }
+}
+
+struct SkinAward: Codable, Identifiable, Hashable {
+  var id: String {
+    "\(sessionId?.uuidString ?? "none")-\(holeNumber)-\(profileId.uuidString)"
+  }
+  let sessionId: UUID?
+  let sessionLabel: String?
+  let holeNumber: Int
+  let profileId: UUID
+  let displayName: String
+  let teamSlug: String?
+  let grossStrokes: Int
+  let amount: Double?
+
+  enum CodingKeys: String, CodingKey {
+    case amount
+    case sessionId = "session_id"
+    case sessionLabel = "session_label"
+    case holeNumber = "hole_number"
+    case profileId = "profile_id"
+    case displayName = "display_name"
+    case teamSlug = "team_slug"
+    case grossStrokes = "gross_strokes"
+  }
+}
+
+struct SkinsStandings: Codable, Hashable {
+  let leaders: [SkinLeader]
+  let awards: [SkinAward]
+  let holesAwarded: Int
+  let holesTiedOrEmpty: Int
+  let pot: Double?
+  let payoutPerSkin: Double?
+
+  enum CodingKeys: String, CodingKey {
+    case leaders, awards, pot
+    case holesAwarded = "holes_awarded"
+    case holesTiedOrEmpty = "holes_tied_or_empty"
+    case payoutPerSkin = "payout_per_skin"
+  }
+}
+
+struct PlayerSessionWinnings: Codable, Identifiable, Hashable {
+  var id: UUID { sessionId }
+  let sessionId: UUID
+  let sessionLabel: String
+  let matchWinnings: Double
+  let skinsWinnings: Double
+  let totalWinnings: Double
+
+  enum CodingKeys: String, CodingKey {
+    case sessionId = "session_id"
+    case sessionLabel = "session_label"
+    case matchWinnings = "match_winnings"
+    case skinsWinnings = "skins_winnings"
+    case totalWinnings = "total_winnings"
+  }
+}
+
+struct PlayerWinnings: Codable, Identifiable, Hashable {
+  var id: UUID { profileId }
+  let profileId: UUID
+  let displayName: String
+  let teamSlug: String?
+  let matchWinnings: Double
+  let skinsWinnings: Double
+  let totalWinnings: Double
+  let bySession: [PlayerSessionWinnings]
+
+  enum CodingKeys: String, CodingKey {
+    case profileId = "profile_id"
+    case displayName = "display_name"
+    case teamSlug = "team_slug"
+    case matchWinnings = "match_winnings"
+    case skinsWinnings = "skins_winnings"
+    case totalWinnings = "total_winnings"
+    case bySession = "by_session"
+  }
+}
+
+struct WinningsStandings: Codable, Hashable {
+  let matchWin: Double
+  let matchPush: Double
+  let matchLose: Double
+  let skinsPot: Double
+  let players: [PlayerWinnings]
+
+  enum CodingKeys: String, CodingKey {
+    case players
+    case matchWin = "match_win"
+    case matchPush = "match_push"
+    case matchLose = "match_lose"
+    case skinsPot = "skins_pot"
   }
 }
 

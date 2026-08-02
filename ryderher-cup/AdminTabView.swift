@@ -8,7 +8,7 @@ struct AdminTabView: View {
   @State private var courses: [CourseSummary] = []
   @State private var loadError: String?
   @State private var isLoading = true
-  @State private var showCreate = false
+  @State private var showSessionSetup = false
 
   var body: some View {
     Group {
@@ -30,34 +30,40 @@ struct AdminTabView: View {
               Label("Import course", systemImage: "flag.fill")
             }
             Button {
-              showCreate = true
+              showSessionSetup = true
             } label: {
-              Label("Create match", systemImage: "plus.circle")
+              Label("Set up session matches", systemImage: "person.3.sequence")
             }
           }
 
-          Section("Matches") {
-            if matches.isEmpty {
+          if matches.isEmpty {
+            Section("Matches") {
               Text("No matches yet.")
                 .foregroundStyle(.secondary)
             }
-            ForEach(matches) { match in
-              NavigationLink {
-                AdminMatchEditorView(matchId: match.id)
-              } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                  Text(match.label)
-                  Text(
-                    [
-                      match.format?.title,
-                      match.status.rawValue,
-                      match.scoringVisibility.title,
-                    ]
-                    .compactMap { $0 }
-                    .joined(separator: " · ")
-                  )
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
+          } else {
+            ForEach(sessions) { session in
+              let sessionMatches = matches.filter { $0.sessionId == session.id }
+              if !sessionMatches.isEmpty {
+                Section(session.label) {
+                  ForEach(sessionMatches) { match in
+                    matchLink(match)
+                  }
+                  .onDelete { offsets in
+                    deleteMatches(sessionMatches, at: offsets)
+                  }
+                }
+              }
+            }
+
+            let unassigned = matches.filter { $0.sessionId == nil }
+            if !unassigned.isEmpty {
+              Section("Unassigned") {
+                ForEach(unassigned) { match in
+                  matchLink(match)
+                }
+                .onDelete { offsets in
+                  deleteMatches(unassigned, at: offsets)
                 }
               }
             }
@@ -69,16 +75,39 @@ struct AdminTabView: View {
     .navigationTitle("Admin")
     .task { await load() }
     .refreshable { await load() }
-    .sheet(isPresented: $showCreate) {
+    .sheet(isPresented: $showSessionSetup) {
       NavigationStack {
-        AdminCreateMatchView(
+        AdminSessionSetupView(
           sessions: sessions,
           profiles: profiles,
-          courses: courses
+          courses: courses,
+          existingMatches: matches
         ) {
-          showCreate = false
+          showSessionSetup = false
           Task { await load() }
         }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func matchLink(_ match: TournamentMatch) -> some View {
+    NavigationLink {
+      AdminMatchEditorView(matchId: match.id)
+    } label: {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(match.label)
+        Text(
+          [
+            match.format?.title,
+            match.status.rawValue,
+            match.scoringVisibility.title,
+          ]
+          .compactMap { $0 }
+          .joined(separator: " · ")
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
     }
   }
@@ -101,24 +130,50 @@ struct AdminTabView: View {
       loadError = error.localizedDescription
     }
   }
+
+  private func deleteMatches(_ source: [TournamentMatch], at offsets: IndexSet) {
+    let toDelete = offsets.map { source[$0] }
+    matches.removeAll { match in toDelete.contains(where: { $0.id == match.id }) }
+    Task {
+      do {
+        let token = try sessionManager.requireToken()
+        for match in toDelete {
+          try await ApiClient.shared.deleteMatch(token: token, id: match.id)
+        }
+      } catch {
+        loadError = error.localizedDescription
+        await load()
+      }
+    }
+  }
 }
 
-struct AdminCreateMatchView: View {
+// MARK: - Session setup (metadata + N pairings)
+
+private struct PairingDraft: Identifiable {
+  let id = UUID()
+  var hookers: [UUID] = []
+  var slicers: [UUID] = []
+}
+
+struct AdminSessionSetupView: View {
   @EnvironmentObject private var sessionManager: SessionManager
   let sessions: [TournamentSession]
   let profiles: [UserProfile]
   let courses: [CourseSummary]
+  let existingMatches: [TournamentMatch]
   let onCreated: () -> Void
 
   @Environment(\.dismiss) private var dismiss
-  @State private var label = ""
+
+  @State private var step = 0
+  @State private var sessionId: UUID?
+  @State private var matchCount = 5
   @State private var format: MatchFormat = .bestBallMatch
   @State private var visibility: ScoringVisibility = .releaseOnComplete
-  @State private var sessionId: UUID?
   @State private var courseId: UUID?
   @State private var teeId: UUID?
-  @State private var hookers: [UUID] = []
-  @State private var slicers: [UUID] = []
+  @State private var pairings: [PairingDraft] = (0..<5).map { _ in PairingDraft() }
   @State private var errorMessage: String?
   @State private var isSaving = false
 
@@ -126,55 +181,43 @@ struct AdminCreateMatchView: View {
     courses.first { $0.id == courseId }
   }
 
-  private var maxPlayersPerSide: Int {
+  private var slotsPerSide: Int {
     format == .singlesMatch ? 1 : 2
+  }
+
+  private var hookersRoster: [UserProfile] {
+    profiles
+      .filter { $0.teamSlug == "hookers" }
+      .sorted { $0.displayName < $1.displayName }
+  }
+
+  private var slicersRoster: [UserProfile] {
+    profiles
+      .filter { $0.teamSlug == "slicers" }
+      .sorted { $0.displayName < $1.displayName }
+  }
+
+  private var usedPlayerIds: Set<UUID> {
+    Set(pairings.flatMap { $0.hookers + $0.slicers })
+  }
+
+  private var sessionAlreadyHasMatches: Bool {
+    guard let sessionId else { return false }
+    return existingMatches.contains { $0.sessionId == sessionId }
+  }
+
+  private var pairingsComplete: Bool {
+    pairings.allSatisfy {
+      $0.hookers.count == slotsPerSide && $0.slicers.count == slotsPerSide
+    }
   }
 
   var body: some View {
     Form {
-      Section("Basics") {
-        TextField("Label", text: $label)
-        Picker("Format", selection: $format) {
-          ForEach(MatchFormat.allCases) { item in
-            Text(item.title).tag(item)
-          }
-        }
-        Picker("Scoreboard", selection: $visibility) {
-          ForEach(ScoringVisibility.allCases, id: \.self) { item in
-            Text(item.title).tag(item)
-          }
-        }
-        Picker("Session", selection: $sessionId) {
-          Text("None").tag(Optional<UUID>.none)
-          ForEach(sessions) { session in
-            Text(session.label).tag(Optional(session.id))
-          }
-        }
-      }
-
-      Section("Course") {
-        Picker("Course", selection: $courseId) {
-          Text("None").tag(Optional<UUID>.none)
-          ForEach(courses) { course in
-            Text(course.name).tag(Optional(course.id))
-          }
-        }
-        if let tees = selectedCourse?.tees, !tees.isEmpty {
-          Picker("Tee", selection: $teeId) {
-            Text("None").tag(Optional<UUID>.none)
-            ForEach(tees) { tee in
-              Text(tee.name).tag(Optional(tee.id))
-            }
-          }
-        }
-      }
-
-      Section("Hookers (\(hookers.count)/\(maxPlayersPerSide))") {
-        playerPicker(side: .hookers)
-      }
-
-      Section("Slicers (\(slicers.count)/\(maxPlayersPerSide))") {
-        playerPicker(side: .slicers)
+      if step == 0 {
+        metadataSection
+      } else {
+        pairingsSection
       }
 
       if let errorMessage {
@@ -183,93 +226,274 @@ struct AdminCreateMatchView: View {
         }
       }
     }
-    .navigationTitle("New match")
+    .navigationTitle(step == 0 ? "Session setup" : "Pairings")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
+        Button(step == 0 ? "Cancel" : "Back") {
+          if step == 0 {
+            dismiss()
+          } else {
+            step = 0
+            errorMessage = nil
+          }
+        }
       }
       ToolbarItem(placement: .confirmationAction) {
-        Button("Create") {
-          Task { await create() }
+        if step == 0 {
+          Button("Next") {
+            errorMessage = nil
+            if sessionId == nil {
+              errorMessage = "Pick a session."
+              return
+            }
+            if sessionAlreadyHasMatches {
+              errorMessage = "That session already has matches. Clear them first or pick another session."
+              return
+            }
+            resizePairings()
+            step = 1
+          }
+        } else {
+          Button("Create \(matchCount)") {
+            Task { await createAll() }
+          }
+          .disabled(isSaving || !pairingsComplete)
         }
-        .disabled(isSaving || label.trimmingCharacters(in: .whitespaces).isEmpty)
       }
     }
+    .onChange(of: matchCount) { _, newValue in
+      format = newValue == 10 ? .singlesMatch : .bestBallMatch
+      resizePairings()
+    }
     .onChange(of: format) { _, _ in
-      hookers = Array(hookers.prefix(maxPlayersPerSide))
-      slicers = Array(slicers.prefix(maxPlayersPerSide))
+      for i in pairings.indices {
+        pairings[i].hookers = Array(pairings[i].hookers.prefix(slotsPerSide))
+        pairings[i].slicers = Array(pairings[i].slicers.prefix(slotsPerSide))
+      }
     }
     .onChange(of: courseId) { _, _ in
       teeId = selectedCourse?.tees?.first?.id
+    }
+    .onAppear {
+      if sessionId == nil {
+        sessionId = sessions.first?.id
+      }
+      if courseId == nil {
+        courseId = courses.first?.id
+        teeId = selectedCourse?.tees?.first?.id
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var metadataSection: some View {
+    Section {
+      Text("Set shared details once, then fill \(matchCount) pairings.")
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+    }
+
+    Section("Session") {
+      Picker("Round", selection: $sessionId) {
+        Text("Select…").tag(Optional<UUID>.none)
+        ForEach(sessions) { session in
+          let count = existingMatches.filter { $0.sessionId == session.id }.count
+          Text(count == 0 ? session.label : "\(session.label) (\(count) set)")
+            .tag(Optional(session.id))
+        }
+      }
+
+      Picker("Matchups", selection: $matchCount) {
+        Text("5 (2v2)").tag(5)
+        Text("10 (singles)").tag(10)
+      }
+      .pickerStyle(.segmented)
+    }
+
+    Section("Shared match settings") {
+      Picker("Format", selection: $format) {
+        ForEach(MatchFormat.allCases) { item in
+          Text(item.title).tag(item)
+        }
+      }
+      Picker("Scoreboard", selection: $visibility) {
+        ForEach(ScoringVisibility.allCases, id: \.self) { item in
+          Text(item.title).tag(item)
+        }
+      }
+      Picker("Course", selection: $courseId) {
+        Text("None").tag(Optional<UUID>.none)
+        ForEach(courses) { course in
+          Text(course.name).tag(Optional(course.id))
+        }
+      }
+      if let tees = selectedCourse?.tees, !tees.isEmpty {
+        Picker("Tee", selection: $teeId) {
+          Text("None").tag(Optional<UUID>.none)
+          ForEach(tees) { tee in
+            Text(tee.name).tag(Optional(tee.id))
+          }
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var pairingsSection: some View {
+    Section {
+      Text(
+        format == .singlesMatch
+          ? "Pick 1 Hooker and 1 Slicer per match. Players can only appear once."
+          : "Pick 2 Hookers and 2 Slicers per match. Players can only appear once."
+      )
+      .font(.footnote)
+      .foregroundStyle(.secondary)
+
+      let filled = pairings.filter {
+        $0.hookers.count == slotsPerSide && $0.slicers.count == slotsPerSide
+      }.count
+      Text("\(filled)/\(matchCount) pairings set · \(usedPlayerIds.count) players assigned")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
+    ForEach(Array(pairings.enumerated()), id: \.element.id) { index, _ in
+      Section("Match \(index + 1)") {
+        playerSlots(
+          title: "Hookers",
+          roster: hookersRoster,
+          selected: pairingBinding(index, side: .hookers)
+        )
+        playerSlots(
+          title: "Slicers",
+          roster: slicersRoster,
+          selected: pairingBinding(index, side: .slicers)
+        )
+      }
     }
   }
 
   private enum Side { case hookers, slicers }
 
-  @ViewBuilder
-  private func playerPicker(side: Side) -> some View {
-    let selected = side == .hookers ? hookers : slicers
-    ForEach(profiles) { profile in
-      let isOn = selected.contains(profile.id)
-      Button {
-        toggle(profile.id, side: side)
-      } label: {
-        HStack {
-          Text(profile.displayName)
-          Spacer()
-          if isOn {
-            Image(systemName: "checkmark.circle.fill")
-              .foregroundStyle(.tint)
-          }
+  private func pairingBinding(_ index: Int, side: Side) -> Binding<[UUID]> {
+    Binding(
+      get: {
+        side == .hookers ? pairings[index].hookers : pairings[index].slicers
+      },
+      set: { newValue in
+        if side == .hookers {
+          pairings[index].hookers = newValue
+        } else {
+          pairings[index].slicers = newValue
         }
       }
-      .foregroundStyle(.primary)
-    }
+    )
   }
 
-  private func toggle(_ id: UUID, side: Side) {
-    switch side {
-    case .hookers:
-      if let idx = hookers.firstIndex(of: id) {
-        hookers.remove(at: idx)
-      } else if hookers.count < maxPlayersPerSide {
-        hookers.append(id)
-        slicers.removeAll { $0 == id }
-      }
-    case .slicers:
-      if let idx = slicers.firstIndex(of: id) {
-        slicers.remove(at: idx)
-      } else if slicers.count < maxPlayersPerSide {
-        slicers.append(id)
-        hookers.removeAll { $0 == id }
+  @ViewBuilder
+  private func playerSlots(
+    title: String,
+    roster: [UserProfile],
+    selected: Binding<[UUID]>
+  ) -> some View {
+    ForEach(0..<slotsPerSide, id: \.self) { slot in
+      let label = slotsPerSide == 1 ? title : "\(title) \(slot + 1)"
+      Picker(label, selection: slotSelection(selected, slot: slot)) {
+        Text("Select…").tag(Optional<UUID>.none)
+        ForEach(availablePlayers(roster: roster, selected: selected.wrappedValue, slot: slot)) { profile in
+          Text(profile.displayName).tag(Optional(profile.id))
+        }
       }
     }
   }
 
-  private func create() async {
+  private func slotSelection(_ selected: Binding<[UUID]>, slot: Int) -> Binding<UUID?> {
+    Binding(
+      get: {
+        slot < selected.wrappedValue.count ? selected.wrappedValue[slot] : nil
+      },
+      set: { newValue in
+        var next = selected.wrappedValue
+        if let newValue {
+          if slot < next.count {
+            next[slot] = newValue
+          } else {
+            next.append(newValue)
+          }
+        } else if slot < next.count {
+          next.remove(at: slot)
+        }
+        var seen = Set<UUID>()
+        selected.wrappedValue = next.filter { seen.insert($0).inserted }.prefix(slotsPerSide).map { $0 }
+      }
+    )
+  }
+
+  private func availablePlayers(
+    roster: [UserProfile],
+    selected: [UUID],
+    slot: Int
+  ) -> [UserProfile] {
+    let current = slot < selected.count ? selected[slot] : nil
+    return roster.filter { profile in
+      if profile.id == current { return true }
+      return !usedPlayerIds.contains(profile.id)
+    }
+  }
+
+  private func resizePairings() {
+    if pairings.count < matchCount {
+      pairings.append(contentsOf: (pairings.count..<matchCount).map { _ in PairingDraft() })
+    } else if pairings.count > matchCount {
+      pairings = Array(pairings.prefix(matchCount))
+    }
+    for i in pairings.indices {
+      pairings[i].hookers = Array(pairings[i].hookers.prefix(slotsPerSide))
+      pairings[i].slicers = Array(pairings[i].slicers.prefix(slotsPerSide))
+    }
+  }
+
+  private func createAll() async {
     errorMessage = nil
+    guard let sessionId else {
+      errorMessage = "Pick a session."
+      return
+    }
+    guard pairingsComplete else {
+      errorMessage = "Fill every Hookers and Slicers slot."
+      return
+    }
+
     isSaving = true
     defer { isSaving = false }
+
     do {
       let token = try sessionManager.requireToken()
-      var players: [[String: Any]] = []
-      for id in hookers {
-        players.append(["profile_id": id.uuidString, "side": "hookers"])
+      let matchPayloads: [[String: Any]] = pairings.enumerated().map { index, pairing in
+        var players: [[String: Any]] = []
+        for id in pairing.hookers {
+          players.append(["profile_id": id.uuidString, "side": "hookers"])
+        }
+        for id in pairing.slicers {
+          players.append(["profile_id": id.uuidString, "side": "slicers"])
+        }
+        return [
+          "sort_order": index + 1,
+          "players": players,
+        ]
       }
-      for id in slicers {
-        players.append(["profile_id": id.uuidString, "side": "slicers"])
-      }
+
       var body: [String: Any] = [
-        "label": label.trimmingCharacters(in: .whitespacesAndNewlines),
+        "session_id": sessionId.uuidString,
         "format": format.rawValue,
         "scoring_visibility": visibility.rawValue,
-        "players": players,
+        "matches": matchPayloads,
       ]
-      if let sessionId { body["session_id"] = sessionId.uuidString }
       if let courseId { body["course_id"] = courseId.uuidString }
       if let teeId { body["tee_id"] = teeId.uuidString }
-      _ = try await ApiClient.shared.createMatch(token: token, body: body)
+
+      _ = try await ApiClient.shared.createSessionMatches(token: token, body: body)
       onCreated()
       dismiss()
     } catch {
