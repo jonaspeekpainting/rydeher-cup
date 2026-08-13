@@ -37,6 +37,8 @@ Re-seed anytime with `npm run db:seed`. Full wipe: `npm run db:reset`.
    - `migrations/001_initial_schema.sql`
    - `migrations/003_tournament_domain.sql`
    - `migrations/004_pink_ball.sql`
+   - `migrations/005_roster_player_updates.sql`
+   - `migrations/006_ghin_handicap_backfill.sql`
    - Seed invites from `migrations/002_seed_invites.example.sql`
 
 3. `npm install && npm run dev`
@@ -52,7 +54,7 @@ Re-seed anytime with `npm run db:seed`. Full wipe: `npm run db:reset`.
 
 | Method | Path | Notes |
 |--------|------|--------|
-| POST | `/api/auth/signup` | invite + code + GHIN (+ manual index fallback) |
+| POST | `/api/auth/signup` | invite + tournament code (GHIN copied from invite if present) |
 | POST | `/api/auth/signin` | |
 | GET | `/api/auth/me` | |
 | GET/PATCH | `/api/profiles`, `/api/profiles/me`, `/api/profiles/:id` | |

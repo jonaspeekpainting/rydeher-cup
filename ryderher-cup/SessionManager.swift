@@ -83,9 +83,7 @@ final class SessionManager: ObservableObject {
   func signUp(
     email: String,
     password: String,
-    tournamentCode: String,
-    ghinNumber: String,
-    handicapIndex: Double?
+    tournamentCode: String
   ) async {
     authError = nil
     suppressBiometricLockOnce = true
@@ -94,9 +92,7 @@ final class SessionManager: ObservableObject {
       let response = try await ApiClient.shared.signUp(
         email: email.trimmingCharacters(in: .whitespacesAndNewlines),
         password: password,
-        code: tournamentCode.trimmingCharacters(in: .whitespacesAndNewlines),
-        ghinNumber: ghinNumber.trimmingCharacters(in: .whitespacesAndNewlines),
-        handicapIndex: handicapIndex
+        code: tournamentCode.trimmingCharacters(in: .whitespacesAndNewlines)
       )
       applyAuthenticatedState(token: response.token, profile: response.profile)
       if suppressBiometricLockOnce {

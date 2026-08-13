@@ -4,8 +4,14 @@ import LocalAuthentication
 enum BiometricPreferences {
   private static let key = "ryderher.biometricLockEnabled"
 
+  /// On by default. Only an explicit Settings toggle writes the key.
   static var lockEnabled: Bool {
-    get { UserDefaults.standard.bool(forKey: key) }
+    get {
+      if UserDefaults.standard.object(forKey: key) == nil {
+        return true
+      }
+      return UserDefaults.standard.bool(forKey: key)
+    }
     set { UserDefaults.standard.set(newValue, forKey: key) }
   }
 }

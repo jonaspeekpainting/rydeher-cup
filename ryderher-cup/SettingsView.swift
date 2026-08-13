@@ -34,7 +34,7 @@ struct SettingsView: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
         } else {
-          Text("When enabled, the app will ask for Face ID or Touch ID when you return after leaving the app.")
+          Text("On by default. The app asks for Face ID or Touch ID when you return after leaving the app.")
             .font(.footnote)
             .foregroundStyle(.secondary)
         }

@@ -231,25 +231,25 @@ FROM teams t
 JOIN (
   VALUES
     ('hookers', 'Tyler Schmalz', 1),
-    ('hookers', 'Jonas Peek', 2),
-    ('hookers', 'Jay Bolton', 3),
+    ('hookers', 'Cole Smith', 2),
+    ('hookers', 'Zach Keller', 3),
     ('hookers', 'Kyle Jonas', 4),
-    ('hookers', 'Carter Armstrong', 5),
+    ('hookers', 'Jared Weinerman', 5),
     ('hookers', 'Will Wilson', 6),
-    ('hookers', 'Cole Smith', 7),
-    ('hookers', 'Jared Weinerman', 8),
-    ('hookers', 'Zach Keller', 9),
+    ('hookers', 'Spencer Smith', 7),
+    ('hookers', 'Jonas Peek', 8),
+    ('hookers', 'Jay Bolton', 9),
     ('hookers', 'Cash Goodheart', 10),
     ('slicers', 'Dylan Schmalz', 1),
-    ('slicers', 'Erik Sarier', 2),
-    ('slicers', 'Mike Fischer', 3),
-    ('slicers', 'Bryan McClennan', 4),
-    ('slicers', 'Wes Bevins', 5),
-    ('slicers', 'Henry Kearing', 6),
-    ('slicers', 'Trent Gutstein', 7),
-    ('slicers', 'Aidan Cohane', 8),
-    ('slicers', 'Ben Murtagh', 9),
-    ('slicers', 'Chris Regan', 10)
+    ('slicers', 'Mike Fisher', 2),
+    ('slicers', 'Erik Sarier', 3),
+    ('slicers', 'Henry Kearing', 4),
+    ('slicers', 'Ben Murtagh', 5),
+    ('slicers', 'Aidan Cohane', 6),
+    ('slicers', 'Bryan Mcllenan', 7),
+    ('slicers', 'Wes Bevins', 8),
+    ('slicers', 'Chris Regan', 9),
+    ('slicers', 'Trent Gutstein', 10)
 ) AS r(slug, display_name, sort_order) ON r.slug = t.slug
 WHERE NOT EXISTS (
   SELECT 1 FROM roster_entries re

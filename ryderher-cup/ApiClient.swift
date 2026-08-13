@@ -48,20 +48,18 @@ final class ApiClient {
   func signUp(
     email: String,
     password: String,
-    code: String,
-    ghinNumber: String,
-    handicapIndex: Double?
+    code: String
   ) async throws -> AuthResponse {
-    var body: [String: Any] = [
-      "email": email,
-      "password": password,
-      "code": code,
-      "ghin_number": ghinNumber,
-    ]
-    if let handicapIndex {
-      body["handicap_index"] = handicapIndex
-    }
-    return try await request(path: "/api/auth/signup", method: "POST", body: body, token: nil)
+    try await request(
+      path: "/api/auth/signup",
+      method: "POST",
+      body: [
+        "email": email,
+        "password": password,
+        "code": code,
+      ],
+      token: nil
+    )
   }
 
   func signIn(email: String, password: String) async throws -> AuthResponse {
@@ -259,6 +257,14 @@ final class ApiClient {
     }
 
     if http.statusCode == 401 {
+      // Prefer the API message for auth failures (bad password, bad tournament
+      // code). Only fall back to "session expired" for bare/generic 401s.
+      if let body = try? decoder.decode(ApiErrorBody.self, from: data) {
+        let message = body.error.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !message.isEmpty, message.caseInsensitiveCompare("Unauthorized") != .orderedSame {
+          throw ApiClientError.server(message)
+        }
+      }
       throw ApiClientError.unauthorized
     }
 

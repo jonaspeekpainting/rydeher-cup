@@ -6,24 +6,15 @@ struct SignUpView: View {
   @State private var password = ""
   @State private var confirmPassword = ""
   @State private var tournamentCode = ""
-  @State private var ghinNumber = ""
-  @State private var handicapIndexText = ""
   @State private var isSubmitting = false
 
   private var passwordsMatch: Bool {
     password == confirmPassword && !password.isEmpty
   }
 
-  private var handicapIndex: Double? {
-    let trimmed = handicapIndexText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return nil }
-    return Double(trimmed)
-  }
-
   private var canSubmit: Bool {
     !email.isEmpty && password.count >= 8 && passwordsMatch
-      && !tournamentCode.isEmpty && !ghinNumber.isEmpty
-      && handicapIndex != nil && !isSubmitting
+      && !tournamentCode.isEmpty && !isSubmitting
   }
 
   var body: some View {
@@ -59,20 +50,6 @@ struct SignUpView: View {
               .textInputAutocapitalization(.never)
           }
 
-          sectionLabel("Handicap")
-          brandedField("GHIN number") {
-            TextField("GHIN number", text: $ghinNumber)
-              .keyboardType(.numberPad)
-              .textInputAutocapitalization(.never)
-          }
-          brandedField("Handicap Index") {
-            TextField("e.g. 8.4", text: $handicapIndexText)
-              .keyboardType(.decimalPad)
-          }
-          Text("Enter your GHIN. If official lookup isn’t configured yet, also enter your Handicap Index.")
-            .font(.caption)
-            .foregroundStyle(BrandColors.onPrimary.opacity(0.65))
-
           if !password.isEmpty, !passwordsMatch {
             Text("Passwords do not match.")
               .font(.footnote)
@@ -92,9 +69,7 @@ struct SignUpView: View {
               await sessionManager.signUp(
                 email: email,
                 password: password,
-                tournamentCode: tournamentCode,
-                ghinNumber: ghinNumber,
-                handicapIndex: handicapIndex
+                tournamentCode: tournamentCode
               )
             }
           } label: {

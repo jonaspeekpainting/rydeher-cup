@@ -44,6 +44,8 @@ export type InviteRow = {
   display_name: string;
   is_admin: boolean;
   claimed_at: string | null;
+  ghin_number: string | null;
+  handicap_index: string | null;
 };
 
 export type TeamSlug = "hookers" | "slicers";

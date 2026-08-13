@@ -27,6 +27,18 @@ Your three captures were `470×1024` (Simulator window shots). They’ve been re
 
 In Connect, open the **iPhone 6.9"** screenshot slot and drop the three `*-6.9-*` files in order: Scoreboard → Match Ups → Players.
 
+### iPad 13" (if Connect still asks)
+
+Your project is iPhone-only, but Connect may still require iPad shots until an iPhone-only build is selected. Use these (phone UI letterboxed on iPad canvas):
+
+| Screen | File |
+|--------|------|
+| Scoreboard | `scoreboard-ipad-13-2064x2752.png` |
+| Match Ups | `match-ups-ipad-13-2064x2752.png` |
+| Players | `players-ipad-13-2064x2752.png` |
+
+Upload under **iPadOS 13" Display**.
+
 **Sharper next time:** use Simulator **File → Save Screen** on an **iPhone 16 Pro Max** (not macOS ⌘⇧4 on the window). Upscaled shots can look a bit soft.
 
 ## Suggested shot list (3–6 screens)

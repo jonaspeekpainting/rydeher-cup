@@ -5,7 +5,10 @@ import {
   signToken,
   verifyTournamentCode,
 } from "@/lib/auth";
-import { fetchHandicapIndex } from "@/lib/ghin";
+import {
+  fetchHandicapIndex,
+  type HandicapLookupResult,
+} from "@/lib/ghin";
 import { errorResponse, json } from "@/lib/http";
 import { linkRosterOnSignup, loadProfile } from "@/lib/profile-query";
 
@@ -28,14 +31,9 @@ export async function POST(request: Request) {
   const emailRaw = body.email;
   const password = body.password;
   const code = body.code?.trim() ?? "";
-  const ghinNumber = body.ghin_number?.trim() ?? "";
 
   if (!emailRaw || !password || !code) {
     return errorResponse("email, password, and code are required", 400);
-  }
-
-  if (!ghinNumber) {
-    return errorResponse("ghin_number is required", 400);
   }
 
   const email = normalizeEmail(emailRaw);
@@ -52,17 +50,8 @@ export async function POST(request: Request) {
     return errorResponse("Tournament signup is not configured", 500);
   }
 
-  let handicap;
-  try {
-    handicap = await fetchHandicapIndex(ghinNumber, body.handicap_index);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Could not resolve handicap";
-    return errorResponse(message, 400);
-  }
-
   const inviteResult = await sql<InviteRow>`
-    SELECT id, display_name, is_admin, claimed_at
+    SELECT id, display_name, is_admin, claimed_at, ghin_number, handicap_index
     FROM invite_list
     WHERE email = ${email}
     LIMIT 1
@@ -90,6 +79,15 @@ export async function POST(request: Request) {
     );
   }
 
+  let handicap: HandicapLookupResult | null = null;
+  try {
+    handicap = await resolveSignupHandicap(body, invite);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not resolve handicap";
+    return errorResponse(message, 400);
+  }
+
   const passwordHash = await hashPassword(password);
   let userId: string | null = null;
 
@@ -104,16 +102,24 @@ export async function POST(request: Request) {
       throw new Error("Could not create user");
     }
 
-    await sql`
-      INSERT INTO profiles (
-        id, email, display_name, is_admin,
-        ghin_number, handicap_index, handicap_source, handicap_updated_at
-      )
-      VALUES (
-        ${userId}, ${email}, ${invite.display_name}, ${invite.is_admin},
-        ${handicap.ghinNumber}, ${handicap.handicapIndex}, ${handicap.source}, now()
-      )
-    `;
+    if (handicap) {
+      await sql`
+        INSERT INTO profiles (
+          id, email, display_name, is_admin,
+          ghin_number, handicap_index, handicap_source, handicap_updated_at
+        )
+        VALUES (
+          ${userId}, ${email}, ${invite.display_name}, ${invite.is_admin},
+          ${handicap.ghinNumber || null}, ${handicap.handicapIndex},
+          ${handicap.source}, now()
+        )
+      `;
+    } else {
+      await sql`
+        INSERT INTO profiles (id, email, display_name, is_admin)
+        VALUES (${userId}, ${email}, ${invite.display_name}, ${invite.is_admin})
+      `;
+    }
 
     await sql`
       UPDATE invite_list
@@ -138,4 +144,29 @@ export async function POST(request: Request) {
     }
     return errorResponse("Could not finish signup", 500);
   }
+}
+
+async function resolveSignupHandicap(
+  body: SignupBody,
+  invite: InviteRow,
+): Promise<HandicapLookupResult | null> {
+  const ghinNumber = body.ghin_number?.trim() || invite.ghin_number?.trim() || "";
+  const inviteIndex =
+    invite.handicap_index != null ? Number(invite.handicap_index) : null;
+  const manualIndex =
+    body.handicap_index != null ? body.handicap_index : inviteIndex;
+
+  if (ghinNumber) {
+    return fetchHandicapIndex(ghinNumber, manualIndex);
+  }
+
+  if (manualIndex != null && Number.isFinite(manualIndex)) {
+    return {
+      handicapIndex: Number(manualIndex),
+      source: "manual",
+      ghinNumber: "",
+    };
+  }
+
+  return null;
 }
