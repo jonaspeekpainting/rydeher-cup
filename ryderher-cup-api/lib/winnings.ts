@@ -1,10 +1,13 @@
 /**
- * Cash winnings from match results + Saturday PM singles skins pot.
+ * Cash winnings from match results, pink ball, and Saturday PM singles skins.
  *
  * Match money (each player on a side):
  *   Win  = $50
  *   Push = $25
  *   Lose = $0
+ *
+ * Pink ball (each best-ball session):
+ *   Each player on the winning group (lowest net) = $50
  *
  * Skins (last round singles only):
  *   Pot = $200 split evenly across awarded skins.
@@ -13,6 +16,7 @@
 export const MATCH_WIN_DOLLARS = 50;
 export const MATCH_PUSH_DOLLARS = 25;
 export const MATCH_LOSE_DOLLARS = 0;
+export const PINK_BALL_WIN_DOLLARS = 50;
 export const SKINS_POT_DOLLARS = 200;
 
 export type SidePoints = number;
@@ -68,10 +72,19 @@ export type SkinsPayoutLeader = {
   amount: number;
 };
 
+/** Decided pink-ball session winners — every player on a winning group. */
+export type PinkBallPayoutWinner = {
+  profileId: string;
+  displayName: string;
+  teamSlug: string | null;
+  sessionId: string;
+};
+
 export type PlayerSessionWinnings = {
   session_id: string;
   session_label: string;
   match_winnings: number;
+  pink_ball_winnings: number;
   skins_winnings: number;
   total_winnings: number;
 };
@@ -81,6 +94,7 @@ export type PlayerWinnings = {
   display_name: string;
   team_slug: string | null;
   match_winnings: number;
+  pink_ball_winnings: number;
   skins_winnings: number;
   total_winnings: number;
   by_session: PlayerSessionWinnings[];
@@ -90,6 +104,7 @@ export type WinningsStandings = {
   match_win: number;
   match_push: number;
   match_lose: number;
+  pink_ball_win: number;
   skins_pot: number;
   players: PlayerWinnings[];
 };
@@ -98,8 +113,10 @@ type Acc = {
   displayName: string;
   teamSlug: string | null;
   matchBySession: Map<string, number>;
+  pinkBallBySession: Map<string, number>;
   skinsBySession: Map<string, number>;
   matchTotal: number;
+  pinkBallTotal: number;
   skinsTotal: number;
 };
 
@@ -120,8 +137,10 @@ function ensurePlayer(
     displayName,
     teamSlug,
     matchBySession: new Map(),
+    pinkBallBySession: new Map(),
     skinsBySession: new Map(),
     matchTotal: 0,
+    pinkBallTotal: 0,
     skinsTotal: 0,
   };
   map.set(profileId, created);
@@ -137,14 +156,16 @@ function addSessionAmount(
 }
 
 /**
- * Compute per-player match + skins cash, broken down by session and in total.
+ * Compute per-player match + pink ball + skins cash, broken down by session.
  * Pass only matches that should count (same gate as cup standings).
+ * Pink ball winners should only include decided sessions (all best-ball final).
  * Skins leaders should already be scoped to last-round singles and include amounts.
  */
 export function computePlayerWinnings(opts: {
   sessions: WinningsSessionMeta[];
   players: WinningsMatchPlayer[];
   results: WinningsMatchResult[];
+  pinkBallWinners: PinkBallPayoutWinner[];
   skinsLeaders: SkinsPayoutLeader[];
   /** Session id that owns the skins pot (last day / last round). */
   skinsSessionId: string | null;
@@ -178,6 +199,24 @@ export function computePlayerWinnings(opts: {
     }
   }
 
+  for (const winner of opts.pinkBallWinners) {
+    if (!sessionById.has(winner.sessionId)) {
+      continue;
+    }
+    const acc = ensurePlayer(
+      tally,
+      winner.profileId,
+      winner.displayName,
+      winner.teamSlug,
+    );
+    acc.pinkBallTotal += PINK_BALL_WIN_DOLLARS;
+    addSessionAmount(
+      acc.pinkBallBySession,
+      winner.sessionId,
+      PINK_BALL_WIN_DOLLARS,
+    );
+  }
+
   for (const leader of opts.skinsLeaders) {
     const acc = ensurePlayer(
       tally,
@@ -204,16 +243,18 @@ export function computePlayerWinnings(opts: {
       const bySession: PlayerSessionWinnings[] = [];
       for (const session of orderedSessions) {
         const match = row.matchBySession.get(session.id) ?? 0;
+        const pinkBall = row.pinkBallBySession.get(session.id) ?? 0;
         const skins = row.skinsBySession.get(session.id) ?? 0;
-        if (match === 0 && skins === 0) {
+        if (match === 0 && pinkBall === 0 && skins === 0) {
           continue;
         }
         bySession.push({
           session_id: session.id,
           session_label: session.label,
           match_winnings: match,
+          pink_ball_winnings: pinkBall,
           skins_winnings: skins,
-          total_winnings: match + skins,
+          total_winnings: match + pinkBall + skins,
         });
       }
 
@@ -222,8 +263,9 @@ export function computePlayerWinnings(opts: {
         display_name: row.displayName,
         team_slug: row.teamSlug,
         match_winnings: row.matchTotal,
+        pink_ball_winnings: row.pinkBallTotal,
         skins_winnings: row.skinsTotal,
-        total_winnings: row.matchTotal + row.skinsTotal,
+        total_winnings: row.matchTotal + row.pinkBallTotal + row.skinsTotal,
         by_session: bySession,
       };
     })
@@ -239,6 +281,7 @@ export function computePlayerWinnings(opts: {
     match_win: MATCH_WIN_DOLLARS,
     match_push: MATCH_PUSH_DOLLARS,
     match_lose: MATCH_LOSE_DOLLARS,
+    pink_ball_win: PINK_BALL_WIN_DOLLARS,
     skins_pot: SKINS_POT_DOLLARS,
     players,
   };

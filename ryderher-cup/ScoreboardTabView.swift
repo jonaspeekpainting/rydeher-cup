@@ -29,14 +29,6 @@ struct ScoreboardTabView: View {
               subtitle: "Boyne · Aug 20–22"
             )
 
-            if let skins = standings.skins {
-              SkinsLeaderboardSection(skins: skins)
-            }
-
-            if let winnings = standings.winnings {
-              WinningsLeaderboardSection(winnings: winnings)
-            }
-
             VStack(alignment: .leading, spacing: 12) {
               BrandSectionHeader(
                 title: "Sessions",
@@ -65,6 +57,18 @@ struct ScoreboardTabView: View {
                     }
                   }
                   .buttonStyle(.plain)
+                }
+              }
+            }
+
+            if standings.winnings != nil || standings.skins != nil {
+              VStack(alignment: .leading, spacing: 18) {
+                if let winnings = standings.winnings {
+                  WinningsLeaderboardSection(winnings: winnings)
+                }
+
+                if let skins = standings.skins {
+                  SkinsLeaderboardSection(skins: skins)
                 }
               }
             }
@@ -176,7 +180,7 @@ private struct WinningsLeaderboardSection: View {
     VStack(alignment: .leading, spacing: 12) {
       BrandSectionHeader(
         title: "Winnings",
-        subtitle: "Win $\(Int(winnings.matchWin)) · Push $\(Int(winnings.matchPush)) · Skins pot $\(Int(winnings.skinsPot))"
+        subtitle: "Win $\(Int(winnings.matchWin)) · Push $\(Int(winnings.matchPush)) · Pink ball $\(Int(winnings.pinkBallWin)) · Skins pot $\(Int(winnings.skinsPot))"
       )
 
       BrandCard {
@@ -256,6 +260,9 @@ private struct WinningsLeaderRow: View {
     if player.matchWinnings > 0 {
       parts.append("\(currency(player.matchWinnings)) matches")
     }
+    if player.pinkBallWinnings > 0 {
+      parts.append("\(currency(player.pinkBallWinnings)) pink ball")
+    }
     if player.skinsWinnings > 0 {
       parts.append("\(currency(player.skinsWinnings)) skins")
     }
@@ -271,7 +278,7 @@ struct WinningsDetailView: View {
       VStack(alignment: .leading, spacing: 18) {
         BrandSectionHeader(
           title: "Player winnings",
-          subtitle: "Match money each round + Saturday PM skins"
+          subtitle: "Match money · pink ball ($\(Int(winnings.pinkBallWin))/player) · Saturday PM skins"
         )
 
         ForEach(winnings.players) { player in
@@ -300,15 +307,10 @@ struct WinningsDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(BrandColors.ink)
                   Spacer()
-                  if session.skinsWinnings > 0 {
-                    Text("\(currency(session.matchWinnings)) + \(currency(session.skinsWinnings)) skins")
-                      .font(.caption.monospacedDigit())
-                      .foregroundStyle(BrandColors.inkMuted)
-                  } else {
-                    Text(currency(session.totalWinnings))
-                      .font(.subheadline.weight(.medium).monospacedDigit())
-                      .foregroundStyle(BrandColors.inkMuted)
-                  }
+                  Text(sessionBreakdown(session))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(BrandColors.inkMuted)
+                    .multilineTextAlignment(.trailing)
                 }
               }
             }
@@ -321,6 +323,26 @@ struct WinningsDetailView: View {
     .navigationTitle("Winnings")
     .navigationBarTitleDisplayMode(.inline)
     .toolbarBackground(BrandColors.canvas, for: .navigationBar)
+  }
+
+  private func sessionBreakdown(_ session: PlayerSessionWinnings) -> String {
+    var parts: [String] = []
+    if session.matchWinnings > 0 {
+      parts.append(currency(session.matchWinnings))
+    }
+    if session.pinkBallWinnings > 0 {
+      parts.append("\(currency(session.pinkBallWinnings)) pink")
+    }
+    if session.skinsWinnings > 0 {
+      parts.append("\(currency(session.skinsWinnings)) skins")
+    }
+    if parts.isEmpty {
+      return currency(session.totalWinnings)
+    }
+    if parts.count == 1, session.pinkBallWinnings == 0, session.skinsWinnings == 0 {
+      return parts[0]
+    }
+    return parts.joined(separator: " + ")
   }
 
   private func teamLabel(_ slug: String?) -> String? {
@@ -720,12 +742,11 @@ struct MatchStandingsRow: View {
         }
         statusBadge
         Spacer(minLength: 0)
-        if match.countsTowardStandings,
-           let hp = match.hookersPoints,
-           let sp = match.slicersPoints {
-          Text("\(formatPoints(hp))–\(formatPoints(sp))")
-            .font(.subheadline.weight(.bold).monospacedDigit())
+        if let scoreText = match.matchPlayScoreText {
+          Text(scoreText)
+            .font(.subheadline.weight(.bold))
             .foregroundStyle(BrandColors.primary)
+            .multilineTextAlignment(.trailing)
         } else if !match.countsTowardStandings, match.status != .complete {
           Text("Counts when final")
             .font(.caption)
@@ -757,9 +778,5 @@ struct MatchStandingsRow: View {
       .padding(.vertical, 3)
       .background(color.opacity(0.12))
       .clipShape(Capsule())
-  }
-
-  private func formatPoints(_ value: Double) -> String {
-    value == floor(value) ? String(Int(value)) : String(format: "%.1f", value)
   }
 }

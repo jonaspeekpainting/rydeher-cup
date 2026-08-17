@@ -7,6 +7,7 @@ import {
   MATCH_LOSE_DOLLARS,
   MATCH_PUSH_DOLLARS,
   MATCH_WIN_DOLLARS,
+  PINK_BALL_WIN_DOLLARS,
   SKINS_POT_DOLLARS,
 } from "./winnings";
 
@@ -98,6 +99,7 @@ describe("computePlayerWinnings", () => {
           slicersPoints: 0.5,
         },
       ],
+      pinkBallWinners: [],
       skinsLeaders: [
         {
           profile_id: "alice",
@@ -118,20 +120,23 @@ describe("computePlayerWinnings", () => {
     });
 
     assert.equal(result.skins_pot, SKINS_POT_DOLLARS);
+    assert.equal(result.pink_ball_win, PINK_BALL_WIN_DOLLARS);
     assert.equal(result.players[0]!.profile_id, "alice");
     assert.equal(result.players[0]!.match_winnings, 75); // 50 + 25
+    assert.equal(result.players[0]!.pink_ball_winnings, 0);
     assert.equal(result.players[0]!.skins_winnings, 100);
     assert.equal(result.players[0]!.total_winnings, 175);
     assert.deepEqual(
       result.players[0]!.by_session.map((s) => [
         s.session_label,
         s.match_winnings,
+        s.pink_ball_winnings,
         s.skins_winnings,
         s.total_winnings,
       ]),
       [
-        ["Thursday AM", 50, 0, 50],
-        ["Saturday PM", 25, 100, 125],
+        ["Thursday AM", 50, 0, 0, 50],
+        ["Saturday PM", 25, 0, 100, 125],
       ],
     );
 
@@ -150,5 +155,59 @@ describe("computePlayerWinnings", () => {
       undefined,
       "players with $0 total are omitted",
     );
+  });
+
+  it("pays each player on the winning pink-ball group $50", () => {
+    const result = computePlayerWinnings({
+      sessions,
+      players: [],
+      results: [],
+      pinkBallWinners: [
+        {
+          profileId: "alice",
+          displayName: "Alice",
+          teamSlug: "hookers",
+          sessionId: "thu",
+        },
+        {
+          profileId: "bob",
+          displayName: "Bob",
+          teamSlug: "hookers",
+          sessionId: "thu",
+        },
+        {
+          profileId: "cara",
+          displayName: "Cara",
+          teamSlug: "slicers",
+          sessionId: "thu",
+        },
+        {
+          profileId: "dan",
+          displayName: "Dan",
+          teamSlug: "slicers",
+          sessionId: "thu",
+        },
+      ],
+      skinsLeaders: [],
+      skinsSessionId: null,
+    });
+
+    assert.equal(result.players.length, 4);
+    for (const player of result.players) {
+      assert.equal(player.match_winnings, 0);
+      assert.equal(player.pink_ball_winnings, PINK_BALL_WIN_DOLLARS);
+      assert.equal(player.skins_winnings, 0);
+      assert.equal(player.total_winnings, PINK_BALL_WIN_DOLLARS);
+      assert.deepEqual(player.by_session, [
+        {
+          session_id: "thu",
+          session_label: "Thursday AM",
+          match_winnings: 0,
+          pink_ball_winnings: 50,
+          skins_winnings: 0,
+          total_winnings: 50,
+        },
+      ]);
+    }
   });
 });

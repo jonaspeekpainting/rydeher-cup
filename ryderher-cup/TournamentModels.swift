@@ -494,6 +494,9 @@ struct StandingsMatchRow: Codable, Identifiable, Hashable {
   let slicersPoints: Double?
   let isProvisional: Bool?
   let countsTowardStandings: Bool
+  let holesWonHookers: Int?
+  let holesWonSlicers: Int?
+  let holesHalved: Int?
 
   enum CodingKeys: String, CodingKey {
     case id, label, format, status
@@ -502,6 +505,41 @@ struct StandingsMatchRow: Codable, Identifiable, Hashable {
     case slicersPoints = "slicers_points"
     case isProvisional = "is_provisional"
     case countsTowardStandings = "counts_toward_standings"
+    case holesWonHookers = "holes_won_hookers"
+    case holesWonSlicers = "holes_won_slicers"
+    case holesHalved = "holes_halved"
+  }
+
+  /// Match-play result for the scoreboard, e.g. "Slicers: 3 & 2".
+  /// Falls back to the winning side alone when the API omits hole margins.
+  var matchPlayScoreText: String? {
+    guard countsTowardStandings, isProvisional == false else { return nil }
+
+    if let margin = matchPlayMarginText {
+      return margin
+    }
+
+    guard let hookersPoints, let slicersPoints else { return nil }
+    if hookersPoints == slicersPoints { return "Halved" }
+    return hookersPoints > slicersPoints ? "Hookers win" : "Slicers win"
+  }
+
+  private var matchPlayMarginText: String? {
+    guard let holesWonHookers, let holesWonSlicers, let holesHalved else {
+      return nil
+    }
+
+    let diff = holesWonHookers - holesWonSlicers
+    if diff == 0 { return "Halved" }
+
+    let holesPlayed = holesWonHookers + holesWonSlicers + holesHalved
+    let remaining = max(0, 18 - holesPlayed)
+    let winner = diff > 0 ? "Hookers" : "Slicers"
+    let up = abs(diff)
+    if remaining == 0 {
+      return "\(winner): \(up) up"
+    }
+    return "\(winner): \(up) & \(remaining)"
   }
 }
 
@@ -650,6 +688,7 @@ struct PlayerSessionWinnings: Codable, Identifiable, Hashable {
   let sessionId: UUID
   let sessionLabel: String
   let matchWinnings: Double
+  let pinkBallWinnings: Double
   let skinsWinnings: Double
   let totalWinnings: Double
 
@@ -657,8 +696,19 @@ struct PlayerSessionWinnings: Codable, Identifiable, Hashable {
     case sessionId = "session_id"
     case sessionLabel = "session_label"
     case matchWinnings = "match_winnings"
+    case pinkBallWinnings = "pink_ball_winnings"
     case skinsWinnings = "skins_winnings"
     case totalWinnings = "total_winnings"
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    sessionId = try c.decode(UUID.self, forKey: .sessionId)
+    sessionLabel = try c.decode(String.self, forKey: .sessionLabel)
+    matchWinnings = try c.decode(Double.self, forKey: .matchWinnings)
+    pinkBallWinnings = try c.decodeIfPresent(Double.self, forKey: .pinkBallWinnings) ?? 0
+    skinsWinnings = try c.decode(Double.self, forKey: .skinsWinnings)
+    totalWinnings = try c.decode(Double.self, forKey: .totalWinnings)
   }
 }
 
@@ -668,6 +718,7 @@ struct PlayerWinnings: Codable, Identifiable, Hashable {
   let displayName: String
   let teamSlug: String?
   let matchWinnings: Double
+  let pinkBallWinnings: Double
   let skinsWinnings: Double
   let totalWinnings: Double
   let bySession: [PlayerSessionWinnings]
@@ -677,9 +728,22 @@ struct PlayerWinnings: Codable, Identifiable, Hashable {
     case displayName = "display_name"
     case teamSlug = "team_slug"
     case matchWinnings = "match_winnings"
+    case pinkBallWinnings = "pink_ball_winnings"
     case skinsWinnings = "skins_winnings"
     case totalWinnings = "total_winnings"
     case bySession = "by_session"
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    profileId = try c.decode(UUID.self, forKey: .profileId)
+    displayName = try c.decode(String.self, forKey: .displayName)
+    teamSlug = try c.decodeIfPresent(String.self, forKey: .teamSlug)
+    matchWinnings = try c.decode(Double.self, forKey: .matchWinnings)
+    pinkBallWinnings = try c.decodeIfPresent(Double.self, forKey: .pinkBallWinnings) ?? 0
+    skinsWinnings = try c.decode(Double.self, forKey: .skinsWinnings)
+    totalWinnings = try c.decode(Double.self, forKey: .totalWinnings)
+    bySession = try c.decode([PlayerSessionWinnings].self, forKey: .bySession)
   }
 }
 
@@ -687,6 +751,7 @@ struct WinningsStandings: Codable, Hashable {
   let matchWin: Double
   let matchPush: Double
   let matchLose: Double
+  let pinkBallWin: Double
   let skinsPot: Double
   let players: [PlayerWinnings]
 
@@ -695,7 +760,18 @@ struct WinningsStandings: Codable, Hashable {
     case matchWin = "match_win"
     case matchPush = "match_push"
     case matchLose = "match_lose"
+    case pinkBallWin = "pink_ball_win"
     case skinsPot = "skins_pot"
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    matchWin = try c.decode(Double.self, forKey: .matchWin)
+    matchPush = try c.decode(Double.self, forKey: .matchPush)
+    matchLose = try c.decode(Double.self, forKey: .matchLose)
+    pinkBallWin = try c.decodeIfPresent(Double.self, forKey: .pinkBallWin) ?? 50
+    skinsPot = try c.decode(Double.self, forKey: .skinsPot)
+    players = try c.decode([PlayerWinnings].self, forKey: .players)
   }
 }
 

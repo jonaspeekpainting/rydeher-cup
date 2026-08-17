@@ -510,11 +510,6 @@ struct ScorecardView: View {
           }
         }
         .frame(height: 5)
-      } else if isPinkCarrier {
-        Circle()
-          .fill(Color.pink)
-          .frame(width: 4, height: 4)
-          .frame(height: 5)
       } else {
         Color.clear.frame(height: 5)
       }

@@ -19,6 +19,7 @@ import {
 import {
   computePlayerWinnings,
   SKINS_POT_DOLLARS,
+  type PinkBallPayoutWinner,
   type WinningsMatchPlayer,
   type WinningsMatchResult,
 } from "@/lib/winnings";
@@ -52,13 +53,19 @@ export async function GET(request: NextRequest) {
       hookers_points: string | null;
       slicers_points: string | null;
       is_provisional: boolean | null;
+      holes_won_hookers: number | null;
+      holes_won_slicers: number | null;
+      holes_halved: number | null;
     }
   >`
     SELECT
       m.*,
       r.hookers_points,
       r.slicers_points,
-      r.is_provisional
+      r.is_provisional,
+      r.holes_won_hookers,
+      r.holes_won_slicers,
+      r.holes_halved
     FROM matches m
     LEFT JOIN match_results r ON r.match_id = m.id
     ORDER BY m.sort_order ASC, m.created_at ASC
@@ -204,6 +211,7 @@ export async function GET(request: NextRequest) {
 
   const winningsResults: WinningsMatchResult[] = [];
   const countingMatchIds = new Set<string>();
+  const pinkBallWinners: PinkBallPayoutWinner[] = [];
 
   const sessionBreakdown = sessions.rows.map((session) => {
     let hookers = 0;
@@ -214,6 +222,7 @@ export async function GET(request: NextRequest) {
       matchLabel: string;
       score: ReturnType<typeof computePinkBallScore>;
     }> = [];
+    const bestBallMatches: MatchRow[] = [];
 
     for (const match of matches.rows) {
       if (match.session_id !== session.id) {
@@ -262,7 +271,14 @@ export async function GET(request: NextRequest) {
         slicers_points: sp,
         is_provisional: counts ? Boolean(match.is_provisional) : null,
         counts_toward_standings: counts,
+        holes_won_hookers: counts ? match.holes_won_hookers : null,
+        holes_won_slicers: counts ? match.holes_won_slicers : null,
+        holes_halved: counts ? match.holes_halved : null,
       });
+
+      if (match.format === "best_ball_match") {
+        bestBallMatches.push(match);
+      }
 
       if (
         match.format === "best_ball_match" &&
@@ -293,6 +309,28 @@ export async function GET(request: NextRequest) {
       pinkEntries.length > 0 ? rankPinkBallMatches(pinkEntries) : [];
     const pinkBallLeader =
       pinkBallStandings.find((row) => row.is_leader) ?? null;
+
+    // Pink ball pays once every best-ball match in the session is final.
+    const pinkBallDecided =
+      bestBallMatches.length > 0 &&
+      bestBallMatches.every((m) => m.status === "complete") &&
+      pinkBallStandings.some((row) => row.is_leader);
+    if (pinkBallDecided) {
+      const winningMatchIds = new Set(
+        pinkBallStandings.filter((row) => row.is_leader).map((row) => row.match_id),
+      );
+      for (const row of matchPlayers.rows) {
+        if (!winningMatchIds.has(row.match_id)) {
+          continue;
+        }
+        pinkBallWinners.push({
+          profileId: row.profile_id,
+          displayName: row.display_name,
+          teamSlug: row.team_slug,
+          sessionId: session.id,
+        });
+      }
+    }
 
     return {
       session: {
@@ -353,6 +391,9 @@ export async function GET(request: NextRequest) {
       slicers_points: sp,
       is_provisional: counts ? Boolean(match.is_provisional) : null,
       counts_toward_standings: counts,
+      holes_won_hookers: counts ? match.holes_won_hookers : null,
+      holes_won_slicers: counts ? match.holes_won_slicers : null,
+      holes_halved: counts ? match.holes_halved : null,
     });
   }
 
@@ -397,6 +438,7 @@ export async function GET(request: NextRequest) {
     })),
     players: winningsPlayers,
     results: winningsResults,
+    pinkBallWinners,
     skinsLeaders: skins.leaders
       .filter((l) => l.amount != null)
       .map((l) => ({
