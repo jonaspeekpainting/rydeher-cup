@@ -107,7 +107,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
   }
 
-  if ((body.refresh_handicaps || body.players || body.format) && format) {
+  const courseOrTeeChanged =
+    body.course_id !== undefined || body.tee_id !== undefined;
+  if (
+    (body.refresh_handicaps ||
+      body.players ||
+      body.format ||
+      courseOrTeeChanged) &&
+    format
+  ) {
     const snapshot = await buildPlayingHandicapSnapshot(id, format);
     await sql`
       UPDATE matches

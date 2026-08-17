@@ -6,6 +6,7 @@ import {
   computeMatchPlayResult,
   computePlayingHandicaps,
   courseHandicapFromIndex,
+  resolveMatchCourseHandicap,
   roundHalfUp,
   scrambleTeamAllowance,
   strokesOnHole,
@@ -122,6 +123,52 @@ describe("courseHandicapFromIndex", () => {
   it("uses slope/113", () => {
     // 10.0 × (113/113) = 10
     assert.equal(courseHandicapFromIndex(10, 113), 10);
+  });
+
+  it("adds rating minus par when both are present", () => {
+    // 11.4 × (146/113) + (74.3 - 72) = 14.720… + 2.3 → 17
+    assert.equal(courseHandicapFromIndex(11.4, 146, 74.3, 72), 17);
+  });
+});
+
+describe("resolveMatchCourseHandicap", () => {
+  it("computes from index + tee slope/rating when available", () => {
+    assert.equal(
+      resolveMatchCourseHandicap({
+        handicapIndex: 11.4,
+        profileCourseHandicap: 99,
+        slope: 146,
+        rating: 74.3,
+        coursePar: 72,
+      }),
+      17,
+    );
+  });
+
+  it("falls back to profile course handicap when slope is missing", () => {
+    assert.equal(
+      resolveMatchCourseHandicap({
+        handicapIndex: 11.4,
+        profileCourseHandicap: 12,
+        slope: null,
+        rating: null,
+        coursePar: null,
+      }),
+      12,
+    );
+  });
+
+  it("falls back to rounded index when slope and profile CH are missing", () => {
+    assert.equal(
+      resolveMatchCourseHandicap({
+        handicapIndex: 11.4,
+        profileCourseHandicap: null,
+        slope: null,
+        rating: null,
+        coursePar: null,
+      }),
+      11,
+    );
   });
 });
 

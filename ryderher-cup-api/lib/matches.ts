@@ -12,6 +12,7 @@ import {
 import {
   computeMatchPlayResult,
   computePlayingHandicaps,
+  resolveMatchCourseHandicap,
   isMatchPlayFormat,
   isTeamBallFormat,
   netScore,
@@ -373,6 +374,57 @@ export async function buildPlayingHandicapSnapshot(
   matchId: string,
   format: MatchFormat,
 ): Promise<Snap> {
+  const matchMeta = await sql<{
+    course_id: string | null;
+    tee_id: string | null;
+  }>`
+    SELECT course_id, tee_id FROM matches WHERE id = ${matchId} LIMIT 1
+  `;
+  const courseId = matchMeta.rows[0]?.course_id ?? null;
+  const teeId = matchMeta.rows[0]?.tee_id ?? null;
+
+  let slope: number | null = null;
+  let rating: number | null = null;
+  let coursePar: number | null = null;
+
+  if (teeId) {
+    const teeResult = await sql<{
+      rating: string | null;
+      slope: number | null;
+    }>`
+      SELECT rating, slope FROM course_tees WHERE id = ${teeId} LIMIT 1
+    `;
+    const tee = teeResult.rows[0];
+    if (tee) {
+      slope = tee.slope;
+      rating = tee.rating != null ? Number(tee.rating) : null;
+    }
+  }
+
+  if (courseId) {
+    // Prefer holes for the selected tee; fall back to course-level holes.
+    if (teeId) {
+      const teePar = await sql<{ total_par: string | null }>`
+        SELECT COALESCE(SUM(par), 0)::int AS total_par
+        FROM course_holes
+        WHERE course_id = ${courseId} AND tee_id = ${teeId}
+      `;
+      const total = Number(teePar.rows[0]?.total_par ?? 0);
+      if (total > 0) {
+        coursePar = total;
+      }
+    }
+    if (coursePar == null) {
+      const courseLevelPar = await sql<{ total_par: string | null }>`
+        SELECT COALESCE(SUM(par), 0)::int AS total_par
+        FROM course_holes
+        WHERE course_id = ${courseId} AND tee_id IS NULL
+      `;
+      const total = Number(courseLevelPar.rows[0]?.total_par ?? 0);
+      coursePar = total > 0 ? total : null;
+    }
+  }
+
   const players = await sql<{
     profile_id: string;
     side: TeamSlug;
@@ -387,13 +439,21 @@ export async function buildPlayingHandicapSnapshot(
   `;
 
   const inputs: PlayerHandicapInput[] = players.rows.map((p) => {
-    const ch =
-      p.course_handicap ??
-      (p.handicap_index != null ? Math.round(Number(p.handicap_index)) : 0);
+    const index =
+      p.handicap_index != null && Number.isFinite(Number(p.handicap_index))
+        ? Number(p.handicap_index)
+        : null;
+
     return {
       profileId: p.profile_id,
       side: p.side,
-      courseHandicap: ch,
+      courseHandicap: resolveMatchCourseHandicap({
+        handicapIndex: index,
+        profileCourseHandicap: p.course_handicap,
+        slope,
+        rating,
+        coursePar,
+      }),
     };
   });
 

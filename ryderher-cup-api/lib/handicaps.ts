@@ -21,7 +21,7 @@ export type TeamSlug = "hookers" | "slicers";
 export type PlayerHandicapInput = {
   profileId: string;
   side: TeamSlug;
-  /** Course handicap (already from slope/rating or admin-entered). */
+  /** Course handicap from the selected tee (slope/rating), or fallback. */
   courseHandicap: number;
 };
 
@@ -256,6 +256,39 @@ export function courseHandicapFromIndex(
     raw += courseRating - par;
   }
   return roundHalfUp(raw);
+}
+
+/**
+ * Resolve a player's course handicap for a match tee.
+ * Prefers Index × slope/rating when the tee has a slope; otherwise falls back
+ * to a stored profile course handicap, then rounded index, then 0.
+ */
+export function resolveMatchCourseHandicap(input: {
+  handicapIndex: number | null;
+  profileCourseHandicap: number | null;
+  slope: number | null;
+  rating: number | null;
+  coursePar: number | null;
+}): number {
+  const { handicapIndex, profileCourseHandicap, slope, rating, coursePar } =
+    input;
+
+  if (
+    handicapIndex != null &&
+    Number.isFinite(handicapIndex) &&
+    slope != null &&
+    Number.isFinite(slope) &&
+    slope > 0
+  ) {
+    return courseHandicapFromIndex(handicapIndex, slope, rating, coursePar);
+  }
+  if (profileCourseHandicap != null) {
+    return profileCourseHandicap;
+  }
+  if (handicapIndex != null && Number.isFinite(handicapIndex)) {
+    return Math.round(handicapIndex);
+  }
+  return 0;
 }
 
 export type HoleResultInput = {
