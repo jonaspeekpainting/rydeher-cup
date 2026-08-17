@@ -101,6 +101,8 @@ struct CupScoreHero: View {
   let slicersPoints: Double
   var title: String = "Ryde-Her Cup"
   var subtitle: String? = nil
+  var hookersDetail: String? = nil
+  var slicersDetail: String? = nil
 
   private var leader: String? {
     if hookersPoints > slicersPoints { return "Hookers lead" }
@@ -141,6 +143,7 @@ struct CupScoreHero: View {
         teamColumn(
           name: "Hookers",
           points: hookersPoints,
+          detail: hookersDetail,
           alignment: .leading,
           accent: BrandColors.hookers
         )
@@ -153,6 +156,7 @@ struct CupScoreHero: View {
         teamColumn(
           name: "Slicers",
           points: slicersPoints,
+          detail: slicersDetail,
           alignment: .trailing,
           accent: BrandColors.slicers
         )
@@ -167,6 +171,7 @@ struct CupScoreHero: View {
   private func teamColumn(
     name: String,
     points: Double,
+    detail: String?,
     alignment: HorizontalAlignment,
     accent _: Color
   ) -> some View {
@@ -184,6 +189,11 @@ struct CupScoreHero: View {
         .foregroundStyle(BrandColors.onPrimary)
         .minimumScaleFactor(0.7)
         .lineLimit(1)
+      if let detail {
+        Text(detail)
+          .font(.caption.weight(.semibold).monospacedDigit())
+          .foregroundStyle(BrandColors.onPrimary.opacity(0.72))
+      }
     }
     .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
   }

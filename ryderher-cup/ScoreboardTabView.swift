@@ -26,7 +26,9 @@ struct ScoreboardTabView: View {
               hookersPoints: standings.hookersPoints,
               slicersPoints: standings.slicersPoints,
               title: "Cup standings",
-              subtitle: "Boyne · Aug 20–22"
+              subtitle: "Boyne · Aug 20–22",
+              hookersDetail: "\(pointsText(max(0, 18 - standings.hookersPoints))) to Win",
+              slicersDetail: "\(pointsText(max(0, 17.5 - standings.slicersPoints))) to Retain"
             )
 
             VStack(alignment: .leading, spacing: 12) {
@@ -111,6 +113,10 @@ struct ScoreboardTabView: View {
     } catch {
       loadError = error.localizedDescription
     }
+  }
+
+  private func pointsText(_ value: Double) -> String {
+    value == floor(value) ? String(Int(value)) : String(format: "%.1f", value)
   }
 }
 
