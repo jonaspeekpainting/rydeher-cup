@@ -223,7 +223,7 @@ struct LiveMatchBattleCard: View {
           Circle()
             .fill(Color.pink)
             .frame(width: 8, height: 8)
-          Text("Pink ball · \(carrier.profile.displayName)")
+          Text("Pink ball · \(shortPlayerName(carrier.profile.displayName))")
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white)
           Spacer(minLength: 0)
@@ -237,7 +237,7 @@ struct LiveMatchBattleCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-          "Pink ball on hole \(activePinkBallHole): \(carrier.profile.displayName)"
+          "Pink ball on hole \(activePinkBallHole): \(shortPlayerName(carrier.profile.displayName))"
         )
       }
 
@@ -277,7 +277,7 @@ struct LiveMatchBattleCard: View {
             if hasPink, alignment == .trailing {
               pinkBallNameBadge()
             }
-            Text(player.profile.displayName)
+            Text(shortPlayerName(player.profile.displayName))
               .font(.subheadline.weight(.medium))
               .foregroundStyle(.white)
               .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
@@ -301,6 +301,13 @@ struct LiveMatchBattleCard: View {
       .background(Color.pink)
       .clipShape(Capsule())
       .accessibilityLabel("Has the pink ball")
+  }
+
+  private func shortPlayerName(_ name: String) -> String {
+    PlayerNameFormatting.shortLastName(
+      name,
+      among: match.players.map(\.profile.displayName)
+    )
   }
 }
 
@@ -422,8 +429,13 @@ private struct UpcomingMatchCard: View {
   }
 
   private var pairingSummary: String {
-    let hookers = match.players.filter { $0.side == "hookers" }.map(\.profile.displayName)
-    let slicers = match.players.filter { $0.side == "slicers" }.map(\.profile.displayName)
+    let names = match.players.map(\.profile.displayName)
+    let hookers = match.players
+      .filter { $0.side == "hookers" }
+      .map { PlayerNameFormatting.shortLastName($0.profile.displayName, among: names) }
+    let slicers = match.players
+      .filter { $0.side == "slicers" }
+      .map { PlayerNameFormatting.shortLastName($0.profile.displayName, among: names) }
     let left = hookers.isEmpty ? "TBD" : hookers.joined(separator: " / ")
     let right = slicers.isEmpty ? "TBD" : slicers.joined(separator: " / ")
     return "\(left)  vs  \(right)"

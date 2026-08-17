@@ -414,7 +414,7 @@ async function main() {
     // 1) Thu AM best ball — complete, Hookers win (live, counts on board)
     await seedBestBallMatch(client, {
       id: MATCH_IDS.thuAm1,
-      label: "Match 1 · Schmalz / Peek vs Schmalz / Sarier",
+      label: "Match 1 · T. Schmalz / Peek vs D. Schmalz / Sarier",
       sortOrder: 1,
       sessionId: sessionByRound[1]!,
       format: "best_ball_match",
@@ -527,7 +527,7 @@ async function main() {
     //    first pink-ball player; no scores / pink ball rows yet.
     await seedBestBallMatch(client, {
       id: MATCH_IDS.satAm1,
-      label: "Match 1 · Peek / Schmalz vs Schmalz / Sarier",
+      label: "Match 1 · Peek / T. Schmalz vs D. Schmalz / Sarier",
       sortOrder: 11,
       sessionId: sessionByRound[5]!,
       format: "best_ball_match",
@@ -563,7 +563,7 @@ async function main() {
     // 8) Sat PM singles — last round; skins pot applies here only
     await seedBestBallMatch(client, {
       id: MATCH_IDS.satPm1,
-      label: "Singles · Schmalz vs Schmalz",
+      label: "Singles · T. Schmalz vs D. Schmalz",
       sortOrder: 7,
       sessionId: sessionByRound[6]!,
       format: "singles_match",
@@ -659,9 +659,9 @@ async function main() {
       const lost = hole === 4 || hole === 9;
       await client.query(
         `INSERT INTO pink_ball_holes (
-           match_id, hole_number, carrier_profile_id, lost, updated_by
-         ) VALUES ($1, $2, $3, $4, $5)`,
-        [MATCH_IDS.thuAm1, hole, carrier.id, lost, carrier.id],
+           match_id, hole_number, carrier_profile_id, lost, lost_count, updated_by
+         ) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [MATCH_IDS.thuAm1, hole, carrier.id, lost, lost ? 1 : 0, carrier.id],
       );
     }
 

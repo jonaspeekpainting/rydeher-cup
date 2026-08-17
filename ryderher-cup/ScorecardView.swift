@@ -1,5 +1,77 @@
 import SwiftUI
 
+/// Traditional scorecard notation for a score relative to par: circles for under,
+/// squares for over, doubled up for eagles and double bogeys.
+enum ScoreMarker: Equatable {
+  case birdie
+  case eagleOrBetter
+  case bogey
+  case doubleBogeyOrWorse
+
+  init?(relativeToPar: Int?) {
+    guard let relativeToPar, relativeToPar != 0 else { return nil }
+    if relativeToPar <= -2 {
+      self = .eagleOrBetter
+    } else if relativeToPar == -1 {
+      self = .birdie
+    } else if relativeToPar == 1 {
+      self = .bogey
+    } else {
+      self = .doubleBogeyOrWorse
+    }
+  }
+
+  var isCircle: Bool {
+    self == .birdie || self == .eagleOrBetter
+  }
+
+  var isDoubled: Bool {
+    self == .eagleOrBetter || self == .doubleBogeyOrWorse
+  }
+
+  var color: Color {
+    isCircle ? .green : .orange
+  }
+
+  var accessibilityLabel: String {
+    switch self {
+    case .birdie: return "birdie"
+    case .eagleOrBetter: return "eagle or better"
+    case .bogey: return "bogey"
+    case .doubleBogeyOrWorse: return "double bogey or worse"
+    }
+  }
+}
+
+/// Ring drawn around a score: one for birdie/bogey, two for eagle/double bogey.
+struct ScoreMarkerOverlay: View {
+  let marker: ScoreMarker
+  var lineWidth: CGFloat = 1
+
+  var body: some View {
+    ZStack {
+      ring(inset: 0)
+      if marker.isDoubled {
+        ring(inset: lineWidth + 2)
+      }
+    }
+    .accessibilityHidden(true)
+  }
+
+  @ViewBuilder
+  private func ring(inset: CGFloat) -> some View {
+    if marker.isCircle {
+      Circle()
+        .strokeBorder(marker.color, lineWidth: lineWidth)
+        .padding(inset)
+    } else {
+      RoundedRectangle(cornerRadius: 2, style: .continuous)
+        .strokeBorder(marker.color, lineWidth: lineWidth)
+        .padding(inset)
+    }
+  }
+}
+
 /// Traditional golf scorecard: holes across, players/teams down, OUT/IN/TOT.
 struct ScorecardView: View {
   @EnvironmentObject private var sessionManager: SessionManager
@@ -79,6 +151,11 @@ struct ScorecardView: View {
               Text("Pink ball net \(total)")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.pink)
+              if let toPar = match.pinkBallScore?.toParText {
+                Text("(\(toPar))")
+                  .font(.subheadline.weight(.semibold).monospacedDigit())
+                  .foregroundStyle(Color.pink)
+              }
               Text("· \(match.pinkBallScore?.holesCounted ?? 0) holes")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -92,7 +169,7 @@ struct ScorecardView: View {
             lost == 0
               ? "\(remaining) of \(TournamentMatch.pinkBallsPerMatch) balls left"
               : "\(remaining) left · lost on \(lostHoleList(match))"
-              + (match.pinkBallScore?.eliminated == true ? " · eliminated" : "")
+              + (eliminationNote(match).map { " · \($0)" } ?? "")
           )
           .font(.caption)
           .foregroundStyle(.secondary)
@@ -150,10 +227,16 @@ struct ScorecardView: View {
         }
 
         if holes.first == 1 {
-          VStack(alignment: .leading, spacing: 2) {
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+              legendChip(marker: .birdie, label: "Birdie")
+              legendChip(marker: .eagleOrBetter, label: "Eagle")
+              legendChip(marker: .bogey, label: "Bogey")
+              legendChip(marker: .doubleBogeyOrWorse, label: "Double+")
+            }
             Text("● under a score = that player/side gets a stroke (HCP 1 = hardest)")
             if match.format?.supportsPinkBall == true {
-              Text("Pink row = carrier net · ✕ = ball lost · TOT = pink ball total")
+              Text("Pink row = carrier net · ✕2 = two balls lost · TOT = pink ball total")
             }
           }
           .font(.caption2)
@@ -186,7 +269,7 @@ struct ScorecardView: View {
         } else {
           ForEach(match.players) { player in
             scoreRow(
-              name: shortName(player.profile.displayName),
+              name: shortPlayerName(player.profile.displayName, in: match),
               subtitle: relativeCaption(match.relativeStrokes(profileId: player.profileId)),
               holes: holes,
               match: match,
@@ -196,7 +279,7 @@ struct ScorecardView: View {
               pinkCarrierAt: { match.pinkBall(forHole: $0)?.carrierProfileId == player.profileId },
               pinkLostAt: {
                 let pb = match.pinkBall(forHole: $0)
-                return pb?.carrierProfileId == player.profileId && (pb?.lost == true)
+                return pb?.carrierProfileId == player.profileId && (pb?.lostCount ?? 0) > 0
               }
             )
           }
@@ -308,8 +391,8 @@ struct ScorecardView: View {
           Text(initials(player.profile.displayName))
             .font(.system(size: 7, weight: .bold).monospaced())
             .foregroundStyle(Color.pink.opacity(0.85))
-          if holeNet.lost {
-            Text("✕")
+          if holeNet.lostCount > 0 {
+            Text(holeNet.lostCount == 1 ? "✕" : "✕\(holeNet.lostCount)")
               .font(.system(size: 7, weight: .bold))
               .foregroundStyle(.red)
           }
@@ -317,7 +400,7 @@ struct ScorecardView: View {
         .frame(height: 9)
       }
       .frame(width: cellWidth, height: 28)
-      .background(Color.pink.opacity(holeNet.lost ? 0.22 : 0.12))
+      .background(Color.pink.opacity(holeNet.lostCount > 0 ? 0.22 : 0.12))
       .clipShape(RoundedRectangle(cornerRadius: 4))
       .opacity(holeNet.counts ? 1 : 0.45)
     } else {
@@ -341,12 +424,26 @@ struct ScorecardView: View {
     relative > 0 ? "+\(relative)" : nil
   }
 
+  /// "out on hole 12 (+5)" once the third ball is gone.
+  private func eliminationNote(_ match: TournamentMatch) -> String? {
+    guard let score = match.pinkBallScore, score.eliminated else { return nil }
+    var text = score.eliminatedOnHole.map { "out on hole \($0)" } ?? "out"
+    if let toPar = score.toParText {
+      text += " (\(toPar))"
+    }
+    return text
+  }
+
   private func lostHoleList(_ match: TournamentMatch) -> String {
-    let holes = (match.pinkBallHoles ?? [])
-      .filter(\.lost)
-      .map(\.holeNumber)
-      .sorted()
-    return holes.map(String.init).joined(separator: ", ")
+    (match.pinkBallHoles ?? [])
+      .filter { $0.lostCount > 0 }
+      .sorted { $0.holeNumber < $1.holeNumber }
+      .map {
+        $0.lostCount == 1
+          ? "\($0.holeNumber)"
+          : "\($0.holeNumber) (×\($0.lostCount))"
+      }
+      .joined(separator: ", ")
   }
 
   private func initials(_ name: String) -> String {
@@ -360,6 +457,14 @@ struct ScorecardView: View {
   private func row<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
     HStack(spacing: 0, content: content)
       .padding(.vertical, 3)
+  }
+
+  private func legendChip(marker: ScoreMarker, label: String) -> some View {
+    HStack(spacing: 4) {
+      ScoreMarkerOverlay(marker: marker, lineWidth: 0.8)
+        .frame(width: 12, height: 12)
+      Text(label)
+    }
   }
 
   private func labelCell(_ text: String, bold: Bool = false, muted: Bool = false) -> some View {
@@ -378,10 +483,19 @@ struct ScorecardView: View {
     isPinkCarrier: Bool = false,
     pinkLost: Bool = false
   ) -> some View {
-    VStack(spacing: 1) {
+    let marker = ScoreMarker(relativeToPar: relativeToPar)
+
+    return VStack(spacing: 1) {
       Text(text)
         .font((bold ? Font.caption.weight(.semibold) : Font.caption).monospacedDigit())
         .foregroundStyle(scoreColor(relativeToPar, muted: muted, isPinkCarrier: isPinkCarrier))
+        .frame(width: 19, height: 19)
+        .overlay {
+          if let marker {
+            ScoreMarkerOverlay(marker: marker)
+          }
+        }
+        .accessibilityLabel(marker.map { "\(text), \($0.accessibilityLabel)" } ?? text)
       if pinkLost {
         Text("lost")
           .font(.system(size: 7, weight: .bold))
@@ -416,8 +530,6 @@ struct ScorecardView: View {
       } else if strokesOnHole > 0 {
         RoundedRectangle(cornerRadius: 4)
           .fill(BrandColors.primary.opacity(0.10))
-      } else if let relativeToPar, relativeToPar <= -2 {
-        Circle().fill(Color.green.opacity(0.18))
       }
     }
     .multilineTextAlignment(.center)
@@ -454,12 +566,11 @@ struct ScorecardView: View {
     holes.reduce(0) { $0 + match.par(forHole: $1) }
   }
 
-  private func shortName(_ name: String) -> String {
-    let parts = name.split(separator: " ")
-    if parts.count >= 2 {
-      return "\(parts[0].prefix(1)). \(parts.last!)"
-    }
-    return name
+  private func shortPlayerName(_ name: String, in match: TournamentMatch) -> String {
+    PlayerNameFormatting.shortLastName(
+      name,
+      among: match.players.map(\.profile.displayName)
+    )
   }
 
   private func fmt(_ value: Double) -> String {

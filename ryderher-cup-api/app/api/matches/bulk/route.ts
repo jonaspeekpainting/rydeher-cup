@@ -7,6 +7,7 @@ import {
   loadCreatedMatchDetail,
   type MatchPlayerInput,
 } from "@/lib/match-create";
+import { shortLastName } from "@/lib/player-names";
 import { requireAdmin } from "@/lib/request-auth";
 
 type BulkPairing = {
@@ -171,21 +172,17 @@ async function loadProfileNames(
   return map;
 }
 
-function lastName(full: string): string {
-  const parts = full.trim().split(/\s+/);
-  return parts[parts.length - 1] ?? full;
-}
-
 function labelFromPlayers(
   players: MatchPlayerInput[],
   names: Map<string, string>,
   index: number,
 ): string {
+  const field = [...names.values()];
   const sideNames = (side: TeamSlug) =>
     players
       .filter((p) => p.side === side)
       .map((p) => names.get(p.profile_id.toLowerCase()) ?? "TBD")
-      .map(lastName);
+      .map((full) => shortLastName(full, field));
 
   const hookers = sideNames("hookers").join(" / ");
   const slicers = sideNames("slicers").join(" / ");

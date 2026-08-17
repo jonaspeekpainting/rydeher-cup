@@ -131,7 +131,7 @@ export function validatePinkBallCarrier(opts: {
 export type PinkBallHoleInput = {
   holeNumber: number;
   carrierProfileId: string;
-  lost: boolean;
+  lostCount: number;
 };
 
 export type PinkBallScoreInput = {
@@ -140,9 +140,10 @@ export type PinkBallScoreInput = {
   grossStrokes: number;
 };
 
-export type PinkBallStrokeIndex = {
+export type PinkBallCourseHole = {
   holeNumber: number;
   strokeIndex: number;
+  par: number | null;
 };
 
 export type PinkBallPlayerRelative = {
@@ -154,6 +155,7 @@ export type PinkBallHoleNet = {
   hole_number: number;
   carrier_profile_id: string;
   lost: boolean;
+  lost_count: number;
   gross_strokes: number | null;
   net_strokes: number | null;
   counts: boolean;
@@ -161,10 +163,12 @@ export type PinkBallHoleNet = {
 
 export type PinkBallScoreSummary = {
   total_net: number | null;
+  total_to_par: number | null;
   holes_counted: number;
   balls_lost: number;
   balls_remaining: number;
   eliminated: boolean;
+  eliminated_on_hole: number | null;
   hole_nets: PinkBallHoleNet[];
 };
 
@@ -172,8 +176,10 @@ export type PinkBallMatchStanding = {
   match_id: string;
   match_label: string;
   total_net: number | null;
+  total_to_par: number | null;
   holes_counted: number;
   eliminated: boolean;
+  eliminated_on_hole: number | null;
   rank: number | null;
   is_leader: boolean;
 };
@@ -251,8 +257,10 @@ export function rankPinkBallMatches(
       match_id: entry.matchId,
       match_label: entry.matchLabel,
       total_net: entry.score.total_net,
+      total_to_par: entry.score.total_to_par,
       holes_counted: entry.score.holes_counted,
       eliminated: entry.score.eliminated,
+      eliminated_on_hole: entry.score.eliminated_on_hole,
       rank,
       is_leader: rank === 1,
     };
@@ -260,20 +268,24 @@ export function rankPinkBallMatches(
 }
 
 /**
- * Sum carrier nets for counted holes. Stops counting after the 3rd lost ball
- * (the hole of the 3rd loss still counts if a score exists).
+ * Sum carrier nets for counted holes. The group is out once the 3rd ball is
+ * lost, and the hole it happened on does not count — they finish it without a
+ * pink ball in play.
  */
 export function computePinkBallScore(opts: {
   pinkHoles: PinkBallHoleInput[];
   scores: PinkBallScoreInput[];
-  strokeIndexes: PinkBallStrokeIndex[];
+  courseHoles: PinkBallCourseHole[];
   players: PinkBallPlayerRelative[];
 }): PinkBallScoreSummary {
   const byHolePink = new Map(
     opts.pinkHoles.map((h) => [h.holeNumber, h]),
   );
   const strokeIndexByHole = new Map(
-    opts.strokeIndexes.map((h) => [h.holeNumber, h.strokeIndex]),
+    opts.courseHoles.map((h) => [h.holeNumber, h.strokeIndex]),
+  );
+  const parByHole = new Map(
+    opts.courseHoles.map((h) => [h.holeNumber, h.par]),
   );
   const relativeByPlayer = new Map(
     opts.players.map((p) => [
@@ -292,8 +304,11 @@ export function computePinkBallScore(opts: {
 
   let lostSoFar = 0;
   let totalNet = 0;
+  let countedPar = 0;
+  let allCountedParsKnown = true;
   let holesCounted = 0;
   let hasAnyNet = false;
+  let eliminatedOnHole: number | null = null;
   const holeNets: PinkBallHoleNet[] = [];
 
   for (let hole = 1; hole <= 18; hole += 1) {
@@ -302,7 +317,9 @@ export function computePinkBallScore(opts: {
       continue;
     }
 
-    const eliminatedAlready = lostSoFar >= PINK_BALLS_PER_MATCH;
+    const lostThrough = lostSoFar + pink.lostCount;
+    // No ball survives this hole once the 3rd one is gone, so it cannot score.
+    const outOfBalls = lostThrough >= PINK_BALLS_PER_MATCH;
     const carrierId = pink.carrierProfileId.toLowerCase();
     const gross =
       scoresByHolePlayer.get(`${hole}:${carrierId}`) ?? null;
@@ -311,37 +328,52 @@ export function computePinkBallScore(opts: {
     const strokes = strokesOnHole(relative, strokeIndex);
     const net =
       gross != null ? netScore(gross, strokes) : null;
-    const counts = !eliminatedAlready && net != null;
+    const counts = !outOfBalls && net != null;
 
     if (counts && net != null) {
       totalNet += net;
       holesCounted += 1;
       hasAnyNet = true;
+      const par = parByHole.get(hole) ?? null;
+      if (par == null) {
+        allCountedParsKnown = false;
+      } else {
+        countedPar += par;
+      }
     }
 
     holeNets.push({
       hole_number: hole,
       carrier_profile_id: pink.carrierProfileId,
-      lost: pink.lost,
+      lost: pink.lostCount > 0,
+      lost_count: pink.lostCount,
       gross_strokes: gross,
       net_strokes: net,
       counts,
     });
 
-    if (!eliminatedAlready && pink.lost) {
-      lostSoFar += 1;
+    if (eliminatedOnHole == null && outOfBalls) {
+      eliminatedOnHole = hole;
     }
+    lostSoFar = lostThrough;
   }
 
-  const ballsLost = opts.pinkHoles.filter((h) => h.lost).length;
+  const ballsLost = opts.pinkHoles.reduce(
+    (total, hole) => total + hole.lostCount,
+    0,
+  );
   const cappedLost = Math.min(ballsLost, PINK_BALLS_PER_MATCH);
+  const eliminated = cappedLost >= PINK_BALLS_PER_MATCH;
 
   return {
     total_net: hasAnyNet ? totalNet : null,
+    total_to_par:
+      hasAnyNet && allCountedParsKnown ? totalNet - countedPar : null,
     holes_counted: holesCounted,
     balls_lost: cappedLost,
     balls_remaining: Math.max(0, PINK_BALLS_PER_MATCH - cappedLost),
-    eliminated: cappedLost >= PINK_BALLS_PER_MATCH,
+    eliminated,
+    eliminated_on_hole: eliminated ? eliminatedOnHole : null,
     hole_nets: holeNets,
   };
 }

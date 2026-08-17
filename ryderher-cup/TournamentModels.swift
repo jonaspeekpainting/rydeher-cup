@@ -91,15 +91,24 @@ struct HoleScore: Codable, Hashable {
   }
 }
 
+/// "E", "+3", "-2" for a score relative to par.
+func scoreToParText(_ value: Int?) -> String? {
+  guard let value else { return nil }
+  if value == 0 { return "E" }
+  return value > 0 ? "+\(value)" : "\(value)"
+}
+
 struct PinkBallHole: Codable, Hashable {
   let holeNumber: Int
   let carrierProfileId: UUID
   let lost: Bool
+  let lostCount: Int
 
   enum CodingKeys: String, CodingKey {
     case lost
     case holeNumber = "hole_number"
     case carrierProfileId = "carrier_profile_id"
+    case lostCount = "lost_count"
   }
 }
 
@@ -108,6 +117,7 @@ struct PinkBallHoleNet: Codable, Hashable, Identifiable {
   let holeNumber: Int
   let carrierProfileId: UUID
   let lost: Bool
+  let lostCount: Int
   let grossStrokes: Int?
   let netStrokes: Int?
   let counts: Bool
@@ -116,6 +126,7 @@ struct PinkBallHoleNet: Codable, Hashable, Identifiable {
     case lost, counts
     case holeNumber = "hole_number"
     case carrierProfileId = "carrier_profile_id"
+    case lostCount = "lost_count"
     case grossStrokes = "gross_strokes"
     case netStrokes = "net_strokes"
   }
@@ -123,20 +134,26 @@ struct PinkBallHoleNet: Codable, Hashable, Identifiable {
 
 struct PinkBallScore: Codable, Hashable {
   let totalNet: Int?
+  let totalToPar: Int?
   let holesCounted: Int
   let ballsLost: Int
   let ballsRemaining: Int
   let eliminated: Bool
+  let eliminatedOnHole: Int?
   let holeNets: [PinkBallHoleNet]
 
   enum CodingKeys: String, CodingKey {
     case eliminated
     case totalNet = "total_net"
+    case totalToPar = "total_to_par"
     case holesCounted = "holes_counted"
     case ballsLost = "balls_lost"
     case ballsRemaining = "balls_remaining"
+    case eliminatedOnHole = "eliminated_on_hole"
     case holeNets = "hole_nets"
   }
+
+  var toParText: String? { scoreToParText(totalToPar) }
 }
 
 struct MatchHoleOutcome: Codable, Hashable {
@@ -353,6 +370,31 @@ struct TournamentMatch: Codable, Identifiable, Hashable {
     return 18
   }
 
+  /// The match play result is final (clinched or all holes in) yet the match is
+  /// still open for scoring, so remaining holes can feed the side games.
+  var isClinchedButOpen: Bool {
+    guard status == .inProgress, let result, !result.isProvisional else {
+      return false
+    }
+    return true
+  }
+
+  /// Match-play style summary of a decided result, e.g. "Hookers win 3&2".
+  var decidedResultText: String? {
+    guard let result, !result.isProvisional else { return nil }
+    let diff = result.holesWonHookers - result.holesWonSlicers
+    if diff == 0 { return "Halved" }
+    let holesPlayed =
+      result.holesWonHookers + result.holesWonSlicers + result.holesHalved
+    let remaining = max(0, 18 - holesPlayed)
+    let winner = diff > 0 ? "Hookers" : "Slicers"
+    let up = abs(diff)
+    if remaining == 0 {
+      return "\(winner) win \(up) up"
+    }
+    return "\(winner) win \(up)&\(remaining)"
+  }
+
   func isHoleComplete(_ hole: Int) -> Bool {
     let scores = holeScores ?? []
     if format?.usesTeamBall == true {
@@ -496,8 +538,10 @@ struct PinkBallMatchStanding: Codable, Identifiable, Hashable {
   let matchId: UUID
   let matchLabel: String
   let totalNet: Int?
+  let totalToPar: Int?
   let holesCounted: Int
   let eliminated: Bool
+  let eliminatedOnHole: Int?
   let rank: Int?
   let isLeader: Bool
 
@@ -506,8 +550,25 @@ struct PinkBallMatchStanding: Codable, Identifiable, Hashable {
     case matchId = "match_id"
     case matchLabel = "match_label"
     case totalNet = "total_net"
+    case totalToPar = "total_to_par"
     case holesCounted = "holes_counted"
+    case eliminatedOnHole = "eliminated_on_hole"
     case isLeader = "is_leader"
+  }
+
+  var toParText: String? { scoreToParText(totalToPar) }
+
+  /// "Out on 12 · +5" — where the last ball went and how they stood there.
+  var outSummary: String? {
+    guard eliminated else { return nil }
+    var bits = ["Out"]
+    if let hole = eliminatedOnHole {
+      bits.append("last ball on hole \(hole)")
+    }
+    if let toPar = toParText {
+      bits.append("\(toPar) there")
+    }
+    return bits.joined(separator: " · ")
   }
 }
 

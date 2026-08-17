@@ -10,8 +10,15 @@ import Testing
 
 struct ryderher_cupTests {
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
-    }
+  @Test func shortLastNameUsesInitialWhenLastNamesCollide() {
+    let field = ["Tyler Schmalz", "Dylan Schmalz", "Jonas Peek"]
+    #expect(PlayerNameFormatting.shortLastName("Tyler Schmalz", among: field) == "T. Schmalz")
+    #expect(PlayerNameFormatting.shortLastName("Dylan Schmalz", among: field) == "D. Schmalz")
+    #expect(PlayerNameFormatting.shortLastName("Jonas Peek", among: field) == "Peek")
+  }
 
+  @Test func shortLastNameStaysPlainWhenUnique() {
+    let field = ["Jonas Peek", "Tyler Schmalz", "Erik Sarier"]
+    #expect(PlayerNameFormatting.shortLastName("Tyler Schmalz", among: field) == "Schmalz")
+  }
 }

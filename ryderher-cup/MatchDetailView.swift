@@ -11,7 +11,7 @@ struct MatchDetailView: View {
   @State private var playerScores: [UUID: Int] = [:]
   @State private var sideScores: [String: Int] = [:]
   @State private var pinkCarrierId: UUID?
-  @State private var pinkBallLost = false
+  @State private var pinkBallsLost = 0
   @State private var errorMessage: String?
   @State private var isSaving = false
   @State private var isStarting = false
@@ -74,10 +74,39 @@ struct MatchDetailView: View {
           pinkBallHole: hole
         )
 
+        if match.isClinchedButOpen {
+          clinchedBanner(match)
+        }
+
         scoringPanel(match)
       }
       .padding()
     }
+  }
+
+  private func clinchedBanner(_ match: TournamentMatch) -> some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: "flag.checkered")
+        .font(.headline)
+        .foregroundStyle(BrandColors.primary)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(match.decidedResultText ?? "Match decided")
+          .font(.subheadline.weight(.bold))
+          .foregroundStyle(BrandColors.ink)
+        Text("Keep entering scores — remaining holes still count for skins and pink ball.")
+          .font(.caption)
+          .foregroundStyle(BrandColors.inkMuted)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(14)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(BrandColors.primary.opacity(0.08))
+    .overlay(
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .strokeBorder(BrandColors.primary.opacity(0.25), lineWidth: 1)
+    )
+    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 
   private func scoringPanel(_ match: TournamentMatch) -> some View {
@@ -321,6 +350,10 @@ struct MatchDetailView: View {
             value: pink.totalNet.map(String.init) ?? "—"
           )
           LabeledContent(
+            "To par",
+            value: pink.toParText ?? "—"
+          )
+          LabeledContent(
             "Holes counted",
             value: "\(pink.holesCounted)"
           )
@@ -329,7 +362,7 @@ struct MatchDetailView: View {
             value: "\(pink.ballsRemaining) of \(TournamentMatch.pinkBallsPerMatch)"
           )
           if pink.eliminated {
-            Text("Eliminated — all 3 pink balls lost")
+            Text(eliminationSummary(pink))
               .font(.footnote)
               .foregroundStyle(.red)
           }
@@ -362,7 +395,11 @@ struct MatchDetailView: View {
   private func pinkBallCard(_ match: TournamentMatch) -> some View {
     let remaining = match.pinkBallsRemaining ?? TournamentMatch.pinkBallsPerMatch
     let lostCount = match.pinkBallsLost ?? 0
-    let eliminated = remaining == 0 && !pinkBallLost
+    let existingHoleLosses = match.pinkBall(forHole: hole)?.lostCount ?? 0
+    let maximumHoleLosses = min(
+      TournamentMatch.pinkBallsPerMatch,
+      remaining + existingHoleLosses
+    )
     let score = match.pinkBallScore
     let canSelect = match.canSelectPinkBallCarrier(forHole: hole)
     let selectable = match.selectablePinkBallCarriers(forHole: hole)
@@ -448,31 +485,33 @@ struct MatchDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
       }
 
-      Button {
-        guard match.canScore, !(eliminated && !pinkBallLost) else { return }
-        pinkBallLost.toggle()
-      } label: {
-        HStack(spacing: 12) {
-          Image(systemName: pinkBallLost ? "checkmark.square.fill" : "square")
-            .font(.title2)
-            .foregroundStyle(pinkBallLost ? Color.pink : Color.primary)
-          Text("Lost pink ball")
+      HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Pink balls lost on this hole")
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.primary)
-          Spacer(minLength: 0)
+          Text("More than one ball can be lost on the same hole.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.primary.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .contentShape(Rectangle())
+        Spacer(minLength: 8)
+        Stepper(
+          value: $pinkBallsLost,
+          in: 0 ... maximumHoleLosses
+        ) {
+          Text("\(pinkBallsLost)")
+            .font(.subheadline.weight(.bold).monospacedDigit())
+            .foregroundStyle(pinkBallsLost > 0 ? Color.pink : Color.primary)
+            .frame(minWidth: 18)
+        }
       }
-      .buttonStyle(.plain)
-      .disabled(!match.canScore || (eliminated && !pinkBallLost))
-      .accessibilityLabel("Lost pink ball")
-      .accessibilityAddTraits(.isButton)
-      .accessibilityValue(pinkBallLost ? "Checked" : "Unchecked")
-      .accessibilityAddTraits(pinkBallLost ? .isSelected : [])
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+      .background(Color.primary.opacity(0.06))
+      .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+      .disabled(!match.canScore)
+      .accessibilityLabel("Pink balls lost on this hole")
+      .accessibilityValue("\(pinkBallsLost)")
 
       if lostCount > 0 {
         Text(lostHolesLabel(match))
@@ -481,9 +520,12 @@ struct MatchDetailView: View {
       }
 
       if remaining == 0 {
-        Text("All 3 pink balls are gone — this group is out of the pink ball game.")
-          .font(.caption.weight(.medium))
-          .foregroundStyle(.red)
+        Text(
+          score.map(eliminationSummary)
+            ?? "All 3 pink balls are gone — this group is out of the pink ball game."
+        )
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.red)
       }
     }
     .padding(14)
@@ -496,14 +538,26 @@ struct MatchDetailView: View {
     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
   }
 
+  /// "Out on hole 12 — 3rd ball lost there, +5 at the time. Hole 12 doesn’t score."
+  private func eliminationSummary(_ score: PinkBallScore) -> String {
+    guard let hole = score.eliminatedOnHole else {
+      return "All 3 pink balls are gone — this group is out of the pink ball game."
+    }
+    let standing = score.toParText.map { ", \($0) at the time" } ?? ""
+    return "Out on hole \(hole) — 3rd ball lost there\(standing). Hole \(hole) doesn’t score."
+  }
+
   private func lostHolesLabel(_ match: TournamentMatch) -> String {
-    let holes = (match.pinkBallHoles ?? [])
-      .filter(\.lost)
-      .map(\.holeNumber)
-      .sorted()
-    guard !holes.isEmpty else { return "" }
-    let list = holes.map(String.init).joined(separator: ", ")
-    return "Lost on hole\(holes.count == 1 ? "" : "s") \(list)"
+    let losses = (match.pinkBallHoles ?? [])
+      .filter { $0.lostCount > 0 }
+      .sorted { $0.holeNumber < $1.holeNumber }
+    guard !losses.isEmpty else { return "" }
+    let list = losses.map {
+      $0.lostCount == 1
+        ? "\($0.holeNumber)"
+        : "\($0.holeNumber) (\($0.lostCount) balls)"
+    }.joined(separator: ", ")
+    return "Lost on hole\(losses.count == 1 ? "" : "s") \(list)"
   }
 
   @ViewBuilder
@@ -519,7 +573,7 @@ struct MatchDetailView: View {
       return match.players.compactMap { player in
         let n = match.strokesReceived(profileId: player.profileId, hole: hole)
         guard n > 0 else { return nil }
-        return (shortLastName(player.profile.displayName), n)
+        return (shortPlayerName(player.profile.displayName, in: match), n)
       }
     }()
 
@@ -567,9 +621,16 @@ struct MatchDetailView: View {
       guard let ph = snap.players.first(where: { $0.profileId == player.profileId }) else {
         return nil
       }
-      return "\(shortLastName(player.profile.displayName)) +\(ph.relativeStrokes) (CH \(ph.courseHandicap))"
+      return "\(shortPlayerName(player.profile.displayName, in: match)) +\(ph.relativeStrokes) (CH \(ph.courseHandicap))"
     }
     return "Playing strokes vs low: " + parts.joined(separator: " · ")
+  }
+
+  private func shortPlayerName(_ name: String, in match: TournamentMatch) -> String {
+    PlayerNameFormatting.shortLastName(
+      name,
+      among: match.players.map(\.profile.displayName)
+    )
   }
 
   private func strokeSubtitle(
@@ -594,10 +655,6 @@ struct MatchDetailView: View {
       bits.append(onThisHole == 1 ? "gets stroke" : "gets \(onThisHole) strokes")
     }
     return bits.joined(separator: " · ")
-  }
-
-  private func shortLastName(_ name: String) -> String {
-    name.split(separator: " ").last.map(String.init) ?? name
   }
 
   private func binding(forPlayer id: UUID) -> Binding<Int> {
@@ -645,13 +702,13 @@ struct MatchDetailView: View {
 
     if let existing = match.pinkBall(forHole: hole) {
       pinkCarrierId = existing.carrierProfileId
-      pinkBallLost = existing.lost
+      pinkBallsLost = existing.lostCount
     } else if let assigned = match.assignedPinkBallCarrier(forHole: hole) {
       pinkCarrierId = assigned
-      pinkBallLost = false
+      pinkBallsLost = 0
     } else {
       pinkCarrierId = match.selectablePinkBallCarriers(forHole: hole).first?.profileId
-      pinkBallLost = false
+      pinkBallsLost = 0
     }
 
     guard let scores = match.holeScores else { return }
@@ -693,7 +750,7 @@ struct MatchDetailView: View {
         }
         pinkPayload = [
           "carrier_profile_id": carrier.uuidString.lowercased(),
-          "lost": pinkBallLost,
+          "lost_count": pinkBallsLost,
         ]
       } else {
         pinkPayload = nil
@@ -804,12 +861,17 @@ struct ScoreStepperRow: View {
 
         Text("\(value)")
           .font(.title3.monospacedDigit().weight(.semibold))
-          .frame(minWidth: 28)
           .foregroundStyle(
             value == par
               ? Color.primary
               : (value < par ? Color.green : Color.orange)
           )
+          .frame(width: 30, height: 30)
+          .overlay {
+            if let marker = ScoreMarker(relativeToPar: value - par) {
+              ScoreMarkerOverlay(marker: marker, lineWidth: 1.5)
+            }
+          }
 
         Button {
           if value < 15 { value += 1 }

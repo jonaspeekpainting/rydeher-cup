@@ -6,6 +6,7 @@ import {
   pinkBallRotationOrder,
   rankPinkBallMatches,
   validatePinkBallCarrier,
+  type PinkBallScoreSummary,
 } from "./pink-ball";
 
 describe("pink ball rotation", () => {
@@ -74,31 +75,38 @@ describe("pink ball rotation", () => {
 });
 
 describe("rankPinkBallMatches", () => {
+  function summary(
+    overrides: Partial<PinkBallScoreSummary>,
+  ): PinkBallScoreSummary {
+    return {
+      total_net: null,
+      total_to_par: null,
+      holes_counted: 0,
+      balls_lost: 0,
+      balls_remaining: 3,
+      eliminated: false,
+      eliminated_on_hole: null,
+      hole_nets: [],
+      ...overrides,
+    };
+  }
+
   it("ranks lowest net first among living groups", () => {
     const ranked = rankPinkBallMatches([
       {
         matchId: "m2",
         matchLabel: "Match 2",
-        score: {
+        score: summary({
           total_net: 48,
           holes_counted: 12,
           balls_lost: 1,
           balls_remaining: 2,
-          eliminated: false,
-          hole_nets: [],
-        },
+        }),
       },
       {
         matchId: "m1",
         matchLabel: "Match 1",
-        score: {
-          total_net: 44,
-          holes_counted: 12,
-          balls_lost: 0,
-          balls_remaining: 3,
-          eliminated: false,
-          hole_nets: [],
-        },
+        score: summary({ total_net: 44, holes_counted: 12 }),
       },
     ]);
     assert.equal(ranked[0]!.match_id, "m1");
@@ -111,26 +119,19 @@ describe("rankPinkBallMatches", () => {
       {
         matchId: "m1",
         matchLabel: "Match 1",
-        score: {
+        score: summary({
           total_net: 31,
           holes_counted: 8,
           balls_lost: 3,
           balls_remaining: 0,
           eliminated: true,
-          hole_nets: [],
-        },
+          eliminated_on_hole: 8,
+        }),
       },
       {
         matchId: "m2",
         matchLabel: "Match 2",
-        score: {
-          total_net: null,
-          holes_counted: 0,
-          balls_lost: 0,
-          balls_remaining: 3,
-          eliminated: false,
-          hole_nets: [],
-        },
+        score: summary({}),
       },
     ]);
     assert.equal(ranked.find((r) => r.match_id === "m1")!.is_leader, false);
@@ -146,26 +147,26 @@ describe("rankPinkBallMatches", () => {
       {
         matchId: "m1",
         matchLabel: "Match 1",
-        score: {
+        score: summary({
           total_net: 40,
           holes_counted: 10,
           balls_lost: 3,
           balls_remaining: 0,
           eliminated: true,
-          hole_nets: [],
-        },
+          eliminated_on_hole: 11,
+        }),
       },
       {
         matchId: "m2",
         matchLabel: "Match 2",
-        score: {
+        score: summary({
           total_net: 38,
           holes_counted: 9,
           balls_lost: 3,
           balls_remaining: 0,
           eliminated: true,
-          hole_nets: [],
-        },
+          eliminated_on_hole: 10,
+        }),
       },
     ]);
     // Most holes finished wins when all are eliminated.
@@ -179,20 +180,20 @@ describe("computePinkBallScore", () => {
     { profileId: "a", relativeStrokes: 0 },
     { profileId: "b", relativeStrokes: 2 },
   ];
-  const strokeIndexes = [
-    { holeNumber: 1, strokeIndex: 1 },
-    { holeNumber: 2, strokeIndex: 2 },
-    { holeNumber: 3, strokeIndex: 3 },
-    { holeNumber: 4, strokeIndex: 4 },
+  const courseHoles = [
+    { holeNumber: 1, strokeIndex: 1, par: 4 },
+    { holeNumber: 2, strokeIndex: 2, par: 4 },
+    { holeNumber: 3, strokeIndex: 3, par: 3 },
+    { holeNumber: 4, strokeIndex: 4, par: 5 },
   ];
 
   it("sums carrier net scores", () => {
     const result = computePinkBallScore({
       players,
-      strokeIndexes,
+      courseHoles,
       pinkHoles: [
-        { holeNumber: 1, carrierProfileId: "a", lost: false },
-        { holeNumber: 2, carrierProfileId: "b", lost: false },
+        { holeNumber: 1, carrierProfileId: "a", lostCount: 0 },
+        { holeNumber: 2, carrierProfileId: "b", lostCount: 0 },
       ],
       scores: [
         { holeNumber: 1, profileId: "a", grossStrokes: 4 },
@@ -202,20 +203,22 @@ describe("computePinkBallScore", () => {
 
     // a: 4 net (0 strokes), b: 5-1=4 on SI 2 (2 relative → strokes on SI 1 and 2)
     assert.equal(result.total_net, 8);
+    assert.equal(result.total_to_par, 0);
     assert.equal(result.holes_counted, 2);
     assert.equal(result.eliminated, false);
+    assert.equal(result.eliminated_on_hole, null);
     assert.equal(result.balls_remaining, 3);
   });
 
-  it("stops counting after the third lost ball", () => {
+  it("does not score the hole the third ball was lost on", () => {
     const result = computePinkBallScore({
       players,
-      strokeIndexes,
+      courseHoles,
       pinkHoles: [
-        { holeNumber: 1, carrierProfileId: "a", lost: true },
-        { holeNumber: 2, carrierProfileId: "a", lost: true },
-        { holeNumber: 3, carrierProfileId: "a", lost: true },
-        { holeNumber: 4, carrierProfileId: "b", lost: false },
+        { holeNumber: 1, carrierProfileId: "a", lostCount: 1 },
+        { holeNumber: 2, carrierProfileId: "a", lostCount: 1 },
+        { holeNumber: 3, carrierProfileId: "a", lostCount: 1 },
+        { holeNumber: 4, carrierProfileId: "b", lostCount: 0 },
       ],
       scores: [
         { holeNumber: 1, profileId: "a", grossStrokes: 4 },
@@ -227,8 +230,36 @@ describe("computePinkBallScore", () => {
 
     assert.equal(result.eliminated, true);
     assert.equal(result.balls_remaining, 0);
-    assert.equal(result.holes_counted, 3);
-    assert.equal(result.total_net, 13); // 4+5+4; hole 4 ignored
+    assert.equal(result.eliminated_on_hole, 3);
+    assert.equal(result.holes_counted, 2);
+    assert.equal(result.total_net, 9); // 4+5; holes 3 and 4 ignored
+    assert.equal(result.total_to_par, 1); // 9 against par 4+4
+    assert.equal(result.hole_nets[2]!.counts, false);
     assert.equal(result.hole_nets[3]!.counts, false);
+  });
+
+  it("counts multiple balls lost on one hole", () => {
+    const result = computePinkBallScore({
+      players,
+      courseHoles,
+      pinkHoles: [
+        { holeNumber: 1, carrierProfileId: "a", lostCount: 2 },
+        { holeNumber: 2, carrierProfileId: "b", lostCount: 1 },
+        { holeNumber: 3, carrierProfileId: "a", lostCount: 0 },
+      ],
+      scores: [
+        { holeNumber: 1, profileId: "a", grossStrokes: 4 },
+        { holeNumber: 2, profileId: "b", grossStrokes: 5 },
+        { holeNumber: 3, profileId: "a", grossStrokes: 3 },
+      ],
+    });
+
+    assert.equal(result.balls_lost, 3);
+    assert.equal(result.balls_remaining, 0);
+    assert.equal(result.eliminated_on_hole, 2);
+    assert.equal(result.holes_counted, 1);
+    assert.equal(result.hole_nets[0]!.lost_count, 2);
+    assert.equal(result.hole_nets[1]!.counts, false);
+    assert.equal(result.hole_nets[2]!.counts, false);
   });
 });

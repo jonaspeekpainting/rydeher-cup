@@ -90,6 +90,7 @@ export type PinkBallHoleView = {
   hole_number: number;
   carrier_profile_id: string;
   lost: boolean;
+  lost_count: number;
 };
 
 export type MatchDetail = {
@@ -140,7 +141,19 @@ export function scoresVisibleToViewer(options: {
   return options.scoringVisibility === "live";
 }
 
+/// Cup points land on the scoreboard as soon as the match result is final
+/// (decided, i.e. no longer provisional). A match play match can be clinched
+/// before the 18th hole (e.g. 3&2); once decided its points count even though
+/// scoring stays open so later holes can feed the side games.
 export function pointsCountTowardStandings(options: {
+  isProvisional: boolean | null;
+}): boolean {
+  return options.isProvisional === false;
+}
+
+/// Side games (pink ball, skins) are scored hole by hole, so they follow the
+/// match's scoring visibility instead of waiting for a final result.
+export function sideGameScoresVisible(options: {
   scoringVisibility: ScoringVisibility;
   status: MatchStatus;
 }): boolean {
@@ -244,8 +257,9 @@ export async function fetchMatchDetail(
         hole_number: number;
         carrier_profile_id: string;
         lost: boolean;
+        lost_count: number;
       }>`
-        SELECT hole_number, carrier_profile_id, lost
+        SELECT hole_number, carrier_profile_id, lost, lost_count
         FROM pink_ball_holes
         WHERE match_id = ${matchId}
         ORDER BY hole_number ASC
@@ -253,9 +267,13 @@ export async function fetchMatchDetail(
       pinkBallHoles = pinkRows.rows.map((row) => ({
         hole_number: row.hole_number,
         carrier_profile_id: row.carrier_profile_id,
-        lost: row.lost,
+        lost: row.lost_count > 0,
+        lost_count: row.lost_count,
       }));
-      pinkBallsLost = pinkBallHoles.filter((h) => h.lost).length;
+      pinkBallsLost = pinkBallHoles.reduce(
+        (total, hole) => total + hole.lost_count,
+        0,
+      );
       pinkBallsRemaining = Math.max(0, PINK_BALLS_PER_MATCH - pinkBallsLost);
     }
   }
@@ -268,7 +286,7 @@ export async function fetchMatchDetail(
       pinkHoles: pinkBallHoles.map((h) => ({
         holeNumber: h.hole_number,
         carrierProfileId: h.carrier_profile_id,
-        lost: h.lost,
+        lostCount: h.lost_count,
       })),
       scores: (holeScores ?? [])
         .filter((s) => s.profile_id != null)
@@ -277,9 +295,10 @@ export async function fetchMatchDetail(
           profileId: s.profile_id!,
           grossStrokes: s.gross_strokes,
         })),
-      strokeIndexes: (course?.holes ?? []).map((h) => ({
+      courseHoles: (course?.holes ?? []).map((h) => ({
         holeNumber: h.hole_number,
         strokeIndex: h.stroke_index ?? h.hole_number,
+        par: h.par,
       })),
       players: (snap?.players ?? []).map((p) => ({
         profileId: p.profileId,
@@ -708,15 +727,18 @@ async function recomputeMatchPlayLike(
 
   const standing = computeMatchPlayResult(holeInputs);
 
+  // Holes with a score for both sides, independent of the (possibly clinched)
+  // match result. Once every hole is in, there is nothing left to score.
+  const holesWithScores = holeInputs.filter(
+    (h) => h.hookersNet != null && h.slicersNet != null,
+  ).length;
+  const allHolesScored =
+    holeInputs.length > 0 && holesWithScores >= holeInputs.length;
+
   if (standing.holesPlayed === 0) {
     await sql`DELETE FROM match_results WHERE match_id = ${match.id}`;
     return;
   }
-
-  const countPoints = pointsCountTowardStandings({
-    scoringVisibility: match.scoring_visibility,
-    status: standing.isComplete ? "complete" : match.status,
-  });
 
   // Always store result for participants; standings API filters by visibility
   await sql`
@@ -744,16 +766,20 @@ async function recomputeMatchPlayLike(
       updated_at = now()
   `;
 
-  if (standing.isComplete && match.status !== "complete") {
+  // The match only locks (status = complete) once every hole has a score, even
+  // if the match play result was clinched earlier. Keeping it in_progress lets
+  // players keep entering scores for the remaining holes, which still feed the
+  // side games (skins, pink ball). Admins can also close it out manually.
+  if (allHolesScored && match.status !== "complete") {
     await sql`
       UPDATE matches
       SET status = 'complete', updated_at = now()
       WHERE id = ${match.id}
     `;
   } else if (
-    standing.holesPlayed > 0 &&
-    match.status === "setup" &&
-    countPoints
+    !allHolesScored &&
+    holesWithScores > 0 &&
+    match.status === "setup"
   ) {
     await sql`
       UPDATE matches

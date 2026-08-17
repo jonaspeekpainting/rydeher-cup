@@ -184,6 +184,7 @@ export type PinkBallHoleRow = {
   hole_number: number;
   carrier_profile_id: string;
   lost: boolean;
+  lost_count: number;
   updated_by: string | null;
   updated_at: string;
 };

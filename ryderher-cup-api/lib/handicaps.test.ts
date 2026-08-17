@@ -200,4 +200,29 @@ describe("computeMatchPlayResult", () => {
     assert.equal(result.isComplete, true);
     assert.equal(result.hookersPoints, 1);
   });
+
+  it("freezes the result at the clinching hole (3&2 stays 3&2)", () => {
+    // Hookers win holes 1-3, holes 4-16 halved → 3 up with 2 to play (3&2).
+    const holes = Array.from({ length: 18 }, (_, i) => {
+      const holeNumber = i + 1;
+      if (holeNumber <= 3) {
+        return { holeNumber, strokeIndex: holeNumber, hookersNet: 4, slicersNet: 5 };
+      }
+      if (holeNumber <= 16) {
+        return { holeNumber, strokeIndex: holeNumber, hookersNet: 4, slicersNet: 4 };
+      }
+      // Slicers win the dead rubber holes 17 & 18 (only matter for side games).
+      return { holeNumber, strokeIndex: holeNumber, hookersNet: 5, slicersNet: 4 };
+    });
+
+    const result = computeMatchPlayResult(holes);
+    assert.equal(result.isComplete, true);
+    assert.equal(result.isProvisional, false);
+    assert.equal(result.holesUp, 3);
+    assert.equal(result.holesPlayed, 16);
+    assert.equal(result.holesWonHookers, 3);
+    assert.equal(result.holesWonSlicers, 0);
+    assert.equal(result.hookersPoints, 1);
+    assert.equal(result.slicersPoints, 0);
+  });
 });

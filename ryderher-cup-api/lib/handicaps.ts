@@ -303,6 +303,7 @@ export type MatchPlayStanding = {
   holesWonHookers: number;
   holesWonSlicers: number;
   holesHalved: number;
+  /** Holes counted toward the match result (freezes once the match is clinched). */
   holesPlayed: number;
   /** Positive = hookers up, negative = slicers up. */
   holesUp: number;
@@ -315,6 +316,11 @@ export type MatchPlayStanding = {
 /**
  * Derive match-play points from hole-by-hole net scores.
  * Completes early when one side is dormie / won (cannot be caught).
+ *
+ * The result freezes at the clinching hole: holes played after the match is
+ * decided (e.g. 3&2) do not change the margin or points. Those later holes are
+ * still recorded for side games (skins, pink ball), but they are not part of
+ * the match-play result.
  */
 export function computeMatchPlayResult(
   holes: HoleResultInput[],
@@ -324,6 +330,7 @@ export function computeMatchPlayResult(
   let holesWonSlicers = 0;
   let holesHalved = 0;
   let holesPlayed = 0;
+  let decided = false;
 
   const sorted = [...holes].sort((a, b) => a.holeNumber - b.holeNumber);
 
@@ -339,12 +346,16 @@ export function computeMatchPlayResult(
     } else {
       holesHalved += 1;
     }
+
+    const runningUp = holesWonHookers - holesWonSlicers;
+    const runningRemaining = totalHoles - holesPlayed;
+    if (holesPlayed === totalHoles || Math.abs(runningUp) > runningRemaining) {
+      decided = true;
+      break;
+    }
   }
 
   const holesUp = holesWonHookers - holesWonSlicers;
-  const remaining = totalHoles - holesPlayed;
-  const decided =
-    holesPlayed === totalHoles || Math.abs(holesUp) > remaining;
 
   let hookersPoints: 0 | 0.5 | 1 = 0.5;
   let slicersPoints: 0 | 0.5 | 1 = 0.5;

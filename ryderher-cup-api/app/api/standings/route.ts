@@ -2,7 +2,10 @@ import { NextRequest } from "next/server";
 import { sql, type MatchRow, type SessionRow, type TeamSlug } from "@/lib/db";
 import { json } from "@/lib/http";
 import type { PlayingHandicapSnapshot } from "@/lib/handicaps";
-import { pointsCountTowardStandings } from "@/lib/matches";
+import {
+  pointsCountTowardStandings,
+  sideGameScoresVisible,
+} from "@/lib/matches";
 import {
   computePinkBallScore,
   rankPinkBallMatches,
@@ -118,9 +121,9 @@ export async function GET(request: NextRequest) {
     match_id: string;
     hole_number: number;
     carrier_profile_id: string;
-    lost: boolean;
+    lost_count: number;
   }>`
-    SELECT pb.match_id, pb.hole_number, pb.carrier_profile_id, pb.lost
+    SELECT pb.match_id, pb.hole_number, pb.carrier_profile_id, pb.lost_count
     FROM pink_ball_holes pb
     JOIN matches m ON m.id = pb.match_id
     WHERE m.format = 'best_ball_match'
@@ -144,8 +147,9 @@ export async function GET(request: NextRequest) {
     match_id: string;
     hole_number: number;
     stroke_index: number | null;
+    par: number | null;
   }>`
-    SELECT m.id AS match_id, ch.hole_number, ch.stroke_index
+    SELECT m.id AS match_id, ch.hole_number, ch.stroke_index, ch.par
     FROM matches m
     JOIN course_holes ch
       ON ch.course_id = m.course_id
@@ -155,14 +159,14 @@ export async function GET(request: NextRequest) {
 
   const pinkByMatch = new Map<
     string,
-    Array<{ holeNumber: number; carrierProfileId: string; lost: boolean }>
+    Array<{ holeNumber: number; carrierProfileId: string; lostCount: number }>
   >();
   for (const row of pinkBallRows.rows) {
     const list = pinkByMatch.get(row.match_id) ?? [];
     list.push({
       holeNumber: row.hole_number,
       carrierProfileId: row.carrier_profile_id,
-      lost: row.lost,
+      lostCount: row.lost_count,
     });
     pinkByMatch.set(row.match_id, list);
   }
@@ -181,17 +185,18 @@ export async function GET(request: NextRequest) {
     scoresByMatch.set(row.match_id, list);
   }
 
-  const strokesByMatch = new Map<
+  const courseHolesByMatch = new Map<
     string,
-    Array<{ holeNumber: number; strokeIndex: number }>
+    Array<{ holeNumber: number; strokeIndex: number; par: number | null }>
   >();
   for (const row of courseStrokeRows.rows) {
-    const list = strokesByMatch.get(row.match_id) ?? [];
+    const list = courseHolesByMatch.get(row.match_id) ?? [];
     list.push({
       holeNumber: row.hole_number,
       strokeIndex: row.stroke_index ?? row.hole_number,
+      par: row.par,
     });
-    strokesByMatch.set(row.match_id, list);
+    courseHolesByMatch.set(row.match_id, list);
   }
 
   let hookersTotal = 0;
@@ -216,8 +221,7 @@ export async function GET(request: NextRequest) {
       }
 
       const counts = pointsCountTowardStandings({
-        scoringVisibility: match.scoring_visibility,
-        status: match.status,
+        isProvisional: match.is_provisional,
       });
 
       const hp =
@@ -260,12 +264,18 @@ export async function GET(request: NextRequest) {
         counts_toward_standings: counts,
       });
 
-      if (match.format === "best_ball_match" && counts) {
+      if (
+        match.format === "best_ball_match" &&
+        sideGameScoresVisible({
+          scoringVisibility: match.scoring_visibility,
+          status: match.status,
+        })
+      ) {
         const snap = parseSnapshot(match.playing_handicaps);
         const score = computePinkBallScore({
           pinkHoles: pinkByMatch.get(match.id) ?? [],
           scores: scoresByMatch.get(match.id) ?? [],
-          strokeIndexes: strokesByMatch.get(match.id) ?? [],
+          courseHoles: courseHolesByMatch.get(match.id) ?? [],
           players: (snap?.players ?? []).map((p) => ({
             profileId: p.profileId,
             relativeStrokes: p.relativeStrokes,
@@ -308,8 +318,7 @@ export async function GET(request: NextRequest) {
       continue;
     }
     const counts = pointsCountTowardStandings({
-      scoringVisibility: match.scoring_visibility,
-      status: match.status,
+      isProvisional: match.is_provisional,
     });
     const hp =
       counts && match.hookers_points != null
@@ -349,11 +358,11 @@ export async function GET(request: NextRequest) {
 
   const skinEntries: SkinScoreEntry[] = [];
   for (const row of skinScoreRows.rows) {
-    const counts = pointsCountTowardStandings({
+    const visible = sideGameScoresVisible({
       scoringVisibility: row.scoring_visibility,
       status: row.status,
     });
-    if (!counts) {
+    if (!visible) {
       continue;
     }
     skinEntries.push({

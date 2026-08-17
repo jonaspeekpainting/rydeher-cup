@@ -18,6 +18,7 @@ type ScoreBody = {
   pink_ball?: {
     carrier_profile_id: string;
     lost?: boolean;
+    lost_count?: number;
   } | null;
 };
 
@@ -139,7 +140,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     if (!allowed.has(carrierId)) {
       return errorResponse("Pink ball carrier must be in this match", 400);
     }
-    const lost = Boolean(body.pink_ball.lost);
+    const requestedLostCount =
+      body.pink_ball.lost_count ??
+      (body.pink_ball.lost ? 1 : 0);
+    if (
+      !Number.isInteger(requestedLostCount) ||
+      requestedLostCount < 0 ||
+      requestedLostCount > PINK_BALLS_PER_MATCH
+    ) {
+      return errorResponse(
+        `pink_ball.lost_count must be 0–${PINK_BALLS_PER_MATCH}`,
+        400,
+      );
+    }
+    const lostCount = requestedLostCount;
 
     const existingPink = await sql<{
       hole_number: number;
@@ -163,29 +177,31 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     }
 
     const existingLost = await sql<{ count: string }>`
-      SELECT COUNT(*)::text AS count
+      SELECT COALESCE(SUM(lost_count), 0)::text AS count
       FROM pink_ball_holes
       WHERE match_id = ${id}
-        AND lost = true
         AND hole_number <> ${holeNumber}
     `;
     const otherLost = Number(existingLost.rows[0]?.count ?? 0);
-    if (lost && otherLost >= PINK_BALLS_PER_MATCH) {
+    if (otherLost + lostCount > PINK_BALLS_PER_MATCH) {
       return errorResponse(
-        `This group already lost all ${PINK_BALLS_PER_MATCH} pink balls`,
+        `A group can lose at most ${PINK_BALLS_PER_MATCH} pink balls`,
         400,
       );
     }
 
     await sql`
       INSERT INTO pink_ball_holes (
-        match_id, hole_number, carrier_profile_id, lost, updated_by, updated_at
+        match_id, hole_number, carrier_profile_id, lost, lost_count,
+        updated_by, updated_at
       ) VALUES (
-        ${id}, ${holeNumber}, ${carrierId}, ${lost}, ${auth.sub}, now()
+        ${id}, ${holeNumber}, ${carrierId}, ${lostCount > 0}, ${lostCount},
+        ${auth.sub}, now()
       )
       ON CONFLICT (match_id, hole_number) DO UPDATE SET
         carrier_profile_id = EXCLUDED.carrier_profile_id,
         lost = EXCLUDED.lost,
+        lost_count = EXCLUDED.lost_count,
         updated_by = EXCLUDED.updated_by,
         updated_at = now()
     `;

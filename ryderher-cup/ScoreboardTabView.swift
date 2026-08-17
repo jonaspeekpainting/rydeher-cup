@@ -506,7 +506,7 @@ private struct SessionStandingsCard: View {
             }
             Spacer(minLength: 0)
             if let net = leader.totalNet {
-              Text("Net \(net)")
+              Text(leader.toParText.map { "Net \(net) (\($0))" } ?? "Net \(net)")
                 .font(.caption.weight(.bold).monospacedDigit())
                 .foregroundStyle(Color.pink)
             }
@@ -576,7 +576,7 @@ struct SessionMatchUpsView: View {
                       .foregroundStyle(Color.pink)
                     Spacer()
                     if let net = leader.totalNet {
-                      Text("Net \(net)")
+                      Text(netAndToPar(net: net, toPar: leader.toParText))
                         .font(.subheadline.weight(.bold).monospacedDigit())
                         .foregroundStyle(Color.pink)
                     }
@@ -598,7 +598,7 @@ struct SessionMatchUpsView: View {
                       .foregroundStyle(Color.pink)
                     Spacer()
                     if let net = leader.totalNet {
-                      Text("Net \(net)")
+                      Text(netAndToPar(net: net, toPar: leader.toParText))
                         .font(.subheadline.weight(.bold).monospacedDigit())
                         .foregroundStyle(Color.pink)
                     }
@@ -606,6 +606,11 @@ struct SessionMatchUpsView: View {
                   Text(leader.matchLabel)
                     .font(.body.weight(.semibold))
                     .foregroundStyle(BrandColors.ink)
+                  if let outSummary = leader.outSummary {
+                    Text(outSummary)
+                      .font(.caption.weight(.semibold))
+                      .foregroundStyle(.red)
+                  }
 
                   Divider().background(BrandColors.hairline)
 
@@ -658,27 +663,40 @@ struct SessionMatchUpsView: View {
     .toolbarBackground(BrandColors.canvas, for: .navigationBar)
   }
 
+  private func netAndToPar(net: Int, toPar: String?) -> String {
+    toPar.map { "Net \(net) (\($0))" } ?? "Net \(net)"
+  }
+
   @ViewBuilder
   private func pinkBallRows(_ standings: [PinkBallMatchStanding]) -> some View {
-    ForEach(standings.filter { $0.holesCounted > 0 }) { row in
-      HStack {
+    ForEach(standings.filter { $0.holesCounted > 0 || $0.eliminated }) { row in
+      HStack(alignment: .top) {
         Text(row.rank.map(String.init) ?? "—")
           .font(.caption.weight(.bold).monospacedDigit())
           .foregroundStyle(BrandColors.inkMuted)
           .frame(width: 20, alignment: .trailing)
-        Text(row.matchLabel)
-          .font(.subheadline)
-          .foregroundStyle(row.isLeader ? Color.pink : BrandColors.ink)
-          .lineLimit(2)
-        Spacer(minLength: 8)
-        if row.eliminated {
-          Text("Out")
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(.red)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(row.matchLabel)
+            .font(.subheadline)
+            .foregroundStyle(row.isLeader ? Color.pink : BrandColors.ink)
+            .lineLimit(2)
+          if let outSummary = row.outSummary {
+            Text(outSummary)
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(.red)
+          }
         }
-        Text(row.totalNet.map { "Net \($0)" } ?? "—")
-          .font(.caption.weight(.semibold).monospacedDigit())
-          .foregroundStyle(BrandColors.inkMuted)
+        Spacer(minLength: 8)
+        VStack(alignment: .trailing, spacing: 2) {
+          Text(row.totalNet.map { "Net \($0)" } ?? "—")
+            .font(.caption.weight(.semibold).monospacedDigit())
+            .foregroundStyle(BrandColors.inkMuted)
+          if let toPar = row.toParText {
+            Text(toPar)
+              .font(.caption2.weight(.bold).monospacedDigit())
+              .foregroundStyle(row.eliminated ? BrandColors.inkMuted : Color.pink)
+          }
+        }
       }
     }
   }
@@ -709,7 +727,7 @@ struct MatchStandingsRow: View {
             .font(.subheadline.weight(.bold).monospacedDigit())
             .foregroundStyle(BrandColors.primary)
         } else if !match.countsTowardStandings, match.status != .complete {
-          Text("Hidden until complete")
+          Text("Counts when final")
             .font(.caption)
             .foregroundStyle(BrandColors.primarySoft)
         }
