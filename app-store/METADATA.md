@@ -27,6 +27,12 @@ Use these values in **App Information** and **Version** screens. Edit the suppor
 
 ---
 
+## Version 1.1 — What’s New
+
+```
+You can now permanently delete your account in Settings.
+```
+
 ## Version 1.0 — What’s New
 
 ```

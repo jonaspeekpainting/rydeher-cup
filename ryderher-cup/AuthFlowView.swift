@@ -6,6 +6,7 @@ private enum AuthRoute: Hashable {
 }
 
 struct AuthFlowView: View {
+  @EnvironmentObject private var sessionManager: SessionManager
   @State private var path = NavigationPath()
 
   var body: some View {
@@ -24,5 +25,15 @@ struct AuthFlowView: View {
       }
     }
     .tint(BrandColors.onPrimary)
+    .alert(
+      "Account deleted",
+      isPresented: $sessionManager.accountDeletedNotice
+    ) {
+      Button("OK", role: .cancel) {
+        sessionManager.acknowledgeAccountDeletedNotice()
+      }
+    } message: {
+      Text("Your Ryde-Her Cup account has been permanently deleted.")
+    }
   }
 }

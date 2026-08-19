@@ -24,19 +24,50 @@ function getPool(): Pool {
   return pool;
 }
 
+export type SqlClient = <O extends QueryResultRow>(
+  strings: TemplateStringsArray,
+  ...values: Primitive[]
+) => Promise<QueryResult<O>>;
+
+function taggedQuery(
+  query: (text: string, values: Primitive[]) => Promise<QueryResult>,
+): SqlClient {
+  return <O extends QueryResultRow>(
+    strings: TemplateStringsArray,
+    ...values: Primitive[]
+  ): Promise<QueryResult<O>> => {
+    let text = strings[0] ?? "";
+    for (let i = 0; i < values.length; i += 1) {
+      text += `$${i + 1}${strings[i + 1] ?? ""}`;
+    }
+    return query(text, values) as Promise<QueryResult<O>>;
+  };
+}
+
 /**
  * Tagged-template SQL client.
  * Uses POSTGRES_URL / RYDEHER_POSTGRES_URL (local Docker or Neon).
  */
-export function sql<O extends QueryResultRow>(
-  strings: TemplateStringsArray,
-  ...values: Primitive[]
-): Promise<QueryResult<O>> {
-  let text = strings[0] ?? "";
-  for (let i = 0; i < values.length; i += 1) {
-    text += `$${i + 1}${strings[i + 1] ?? ""}`;
+export const sql: SqlClient = taggedQuery((text, values) =>
+  getPool().query(text, values),
+);
+
+export async function withTransaction<T>(
+  fn: (tx: SqlClient) => Promise<T>,
+): Promise<T> {
+  const client = await getPool().connect();
+  const tx = taggedQuery((text, values) => client.query(text, values));
+  try {
+    await client.query("BEGIN");
+    const result = await fn(tx);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-  return getPool().query<O>(text, values);
 }
 
 export type InviteRow = {

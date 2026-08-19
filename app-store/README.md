@@ -148,6 +148,7 @@ Typical first review: ~24–48 hours (can vary).
 | Crash on launch | Release build must use Vercel URL (already wired) |
 | “Hookers” team name flagged | Unlikely for sports context; review notes explain private tournament teams |
 | Missing Face ID purpose string | Already set in project |
+| Account creation without deletion (5.1.1(v)) | Settings → Delete Account permanently removes the login; see `REVIEW_NOTES.md` |
 
 ---
 

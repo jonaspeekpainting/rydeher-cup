@@ -12,6 +12,7 @@ final class SessionManager: ObservableObject {
   @Published private(set) var isLoading = true
   @Published var authError: String?
   @Published var biometricLocked = false
+  @Published var accountDeletedNotice = false
 
   private var token: String?
   private var suppressBiometricLockOnce = false
@@ -116,6 +117,27 @@ final class SessionManager: ObservableObject {
     authError = nil
     clearSession()
     biometricLocked = false
+  }
+
+  func deleteAccount() async {
+    authError = nil
+    guard let token else {
+      authError = ApiClientError.unauthorized.localizedDescription
+      return
+    }
+
+    do {
+      try await ApiClient.shared.deleteAccount(token: token)
+      clearSession()
+      biometricLocked = false
+      accountDeletedNotice = true
+    } catch {
+      authError = error.localizedDescription
+    }
+  }
+
+  func acknowledgeAccountDeletedNotice() {
+    accountDeletedNotice = false
   }
 
   func unlockWithBiometrics() async {

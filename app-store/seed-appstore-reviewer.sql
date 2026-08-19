@@ -2,7 +2,8 @@
 -- Email:    appstore.review@rydeher.cup
 -- Password: ReviewCup2026!
 --
--- Run once in Neon SQL Editor.
+-- Run in Neon SQL Editor. Safe to re-run after the reviewer deletes the
+-- demo account (deletion unclaims the invite and removes the user).
 
 BEGIN;
 

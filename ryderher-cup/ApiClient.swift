@@ -75,6 +75,14 @@ final class ApiClient {
     try await request(path: "/api/auth/me", method: "GET", token: token)
   }
 
+  func deleteAccount(token: String) async throws {
+    let _: OkResponse = try await request(
+      path: "/api/auth/account",
+      method: "DELETE",
+      token: token
+    )
+  }
+
   func fetchAllProfiles(token: String) async throws -> [UserProfile] {
     try await request(path: "/api/profiles", method: "GET", token: token)
   }
